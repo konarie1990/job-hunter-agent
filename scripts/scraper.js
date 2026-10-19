@@ -11,9 +11,9 @@ const settings = db.prepare('SELECT * FROM search_settings WHERE id = 1').get();
 
 const excludeKeywords = settings?.exclude_keywords
   ? settings.exclude_keywords
-      .split(',')
-      .map((k) => k.trim().toLowerCase())
-      .filter(Boolean)
+    .split(',')
+    .map((k) => k.trim().toLowerCase())
+    .filter(Boolean)
   : [];
 
 const workModel = settings?.work_model || 'remote';
@@ -26,32 +26,39 @@ const insertJobStmt = db.prepare(`
   )
 `);
 
-const startUrl = 'https://html.duckduckgo.com/html/?q=site:boards.greenhouse.io+OR+site:jobs.lever.co+"Shopify"+"Developer"';
-
+// Replace the DuckDuckGo string with this direct array
+const startUrl = [
+  'https://jobs.lever.co/wmg/d15787fb-5f2e-4d60-bdd0-8459aac1c1a8', // Real Shopify Dev Job
+  'https://jobs.lever.co/bloom/9901ce9c-47ab-44d4-9e97-fe090a5829a1' // Ecommerce Director Job
+];
 const crawler = new PlaywrightCrawler({
-  headless: true,
+  headless: false, // Opens a real browser window so you can see the DDG page!
+  preNavigationHooks: [
+    async ({ page }) => {
+      // Masquerade as a standard Mac Chrome user
+      await page.setExtraHTTPHeaders({
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      });
+    }
+  ],
   async requestHandler({ request, page, enqueueLinks, log }) {
     log.info(`Processing: ${request.url}`);
 
     if (request.url.includes('duckduckgo.com')) {
       await enqueueLinks({
-        selector: 'a.result__url, a.result__snippet, .results_links_deep a.result__a',
+        selector: 'a.result__url, a.result__snippet',
         transformRequestFunction(req) {
           try {
-            const parsedUrl = new URL(req.url);
-            if (parsedUrl.hostname.includes('duckduckgo.com') && parsedUrl.searchParams.has('uddg')) {
-              req.url = decodeURIComponent(parsedUrl.searchParams.get('uddg'));
+            // Extract the actual URL from DuckDuckGo's redirect parameter
+            const urlObj = new URL(req.url);
+            if (urlObj.searchParams.has('uddg')) {
+              req.url = decodeURIComponent(urlObj.searchParams.get('uddg'));
             }
-          } catch (e) {
-            // keep original if parsing fails
-          }
-
-          if (
-            req.url.includes('boards.greenhouse.io') ||
-            req.url.includes('jobs.lever.co')
-          ) {
-            return req;
-          }
+            // Only enqueue Greenhouse and Lever links
+            if (req.url.includes('boards.greenhouse.io') || req.url.includes('jobs.lever.co')) {
+              return req;
+            }
+          } catch (e) { }
           return false;
         },
       });
@@ -148,4 +155,4 @@ const crawler = new PlaywrightCrawler({
   },
 });
 
-await crawler.run([startUrl]);
+await crawler.run(startUrl);
