@@ -17,6 +17,7 @@ const selectPendingJobsStmt = db.prepare(`
   FROM jobs
   WHERE status = 'pending'
   ORDER BY id ASC
+  LIMIT 50
 `);
 
 const updateJobSuccessStmt = db.prepare(`
@@ -60,21 +61,15 @@ async function extractPendingJobs() {
     return;
   }
 
-  const browser = await chromium.launch({
-    headless: true,
-  });
+  const browserProfilePath = path.join(__dirname, '..', 'browser_profile');
+  const browser = await chromium.launchPersistentContext(browserProfilePath, { headless: false, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' });
 
   try {
     for (let i = 0; i < pendingJobs.length; i++) {
       const job = pendingJobs[i];
       console.log(`[Playwright Extractor] (${i + 1}/${pendingJobs.length}) Extracting: ${job.url}`);
 
-      const context = await browser.newContext({
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      });
-
-      const page = await context.newPage();
+      const page = await browser.newPage();
 
       try {
         await page.goto(job.url, {
@@ -82,10 +77,16 @@ async function extractPendingJobs() {
           waitUntil: 'domcontentloaded',
         });
 
-        // Small wait for dynamic content to populate
+        // Wait for redirects to login walls to complete
         await page.waitForTimeout(2000);
 
         const pageTitle = (await page.title()) || 'Untitled Position';
+
+        if (pageTitle.includes('Sign in') || pageTitle.includes('Log In') || pageTitle.includes('Security Verification')) {
+          console.warn('LOGIN WALL DETECTED! Please log into the visible browser window. Waiting 60 seconds...');
+          await page.waitForTimeout(60000);
+        }
+
         const bodyText = await page.evaluate(() => document.body ? document.body.innerText : '');
         const cleanedDescription = cleanText(bodyText);
 
@@ -101,7 +102,6 @@ async function extractPendingJobs() {
         updateJobFailedStmt.run({ id: job.id });
       } finally {
         await page.close().catch(() => {});
-        await context.close().catch(() => {});
       }
 
       if (i < pendingJobs.length - 1) {

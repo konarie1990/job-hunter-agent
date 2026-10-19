@@ -119,7 +119,11 @@ async function ingestGmailAlerts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const query = 'from:(alert@indeed.com OR jobalerts-noreply@linkedin.com) newer_than:30d';
+  const settings = db.prepare('SELECT target_senders, blocked_senders FROM settings WHERE id = 1').get();
+  const targetSenders = settings.target_senders.split(',').map(sender => sender.trim());
+  const blockedSenders = settings.blocked_senders.split(',').map(sender => sender.trim());
+
+  const query = `from:(${targetSenders.map(sender => sender.includes('@') ? sender : `@${sender}`)}.com) newer_than:30d`;
   console.log(`[Gmail Ingest] Querying messages with filter: "${query}"...`);
 
   let pageToken = undefined;
@@ -157,8 +161,9 @@ async function ingestGmailAlerts() {
 
         let insertedCount = 0;
         for (const jobUrl of jobUrls) {
+          const cleanUrl = jobUrl.split('?')[0];
           const result = insertJobStmt.run(
-            jobUrl,
+            cleanUrl,
             'Pending Playwright Extraction',
             'Pending Playwright Extraction',
             'Pending Playwright Extraction'
