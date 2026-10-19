@@ -1,12 +1,14 @@
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch');
-const db = require('../src/lib/db.js');
+import fs from 'fs';
+import path from 'path';
+import db from '../src/lib/db.js';
 
-const selectJobsStmt = db.prepare(`
-  SELECT * FROM jobs
-  WHERE status = 'pending_review' AND score IS NULL
-`);
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Change whatever SELECT statement is there to this:
+const jobsToEvaluate = db.prepare("SELECT * FROM jobs WHERE evaluation IS NULL").all();
 
 const updateJobStmt = db.prepare(`
   UPDATE jobs
@@ -18,6 +20,7 @@ const updateJobStmt = db.prepare(`
 
 async function evaluateJobs() {
   /** @type {Job[]} */
+  const selectJobsStmt = db.prepare("SELECT * FROM jobs WHERE evaluation IS NULL");
   const jobs = selectJobsStmt.all();
   console.log(`Found ${jobs.length} jobs to evaluate.`);
 
@@ -25,8 +28,27 @@ async function evaluateJobs() {
     const resumePath = path.join(__dirname, '..', 'resume.md');
     const resumeText = fs.readFileSync(resumePath, 'utf8');
 
-    const prompt = `You are an expert technical recruiter. Evaluate this job posting against the candidate's provided resume. Resume: ${resumeText}. Job Title: ${job.title}. Company: ${job.company}. Description: ${job.description}. Return a JSON object with exactly three keys: 'score' (an integer from 1 to 10 based strictly on how well the job requirements align with the candidate's resume experience), 'reasoning' (1-2 sentences explaining the score based on specific resume matches or gaps), and 'cover_letter' (a 3-paragraph cover letter tailored to this specific job that explicitly highlights overlapping projects, e-commerce architecture experience, and technologies from the resume).`;
+    const settings = db.prepare('SELECT min_salary FROM settings WHERE id = 1').get();
+    const minSalary = settings?.min_salary || 140000;
 
+    const prompt = `You are a ruthless technical recruiter evaluating a job posting for a Senior Web Developer and Full-Stack Software Engineer. 
+The candidate specializes in enterprise e-commerce architecture, Shopify Plus storefront development, and serverless backend integrations (AWS Lambda, Node.js). They are highly proficient in Liquid, Remix, Vue.js, React, and SvelteKit. They are based near Denver, Colorado, and require a minimum salary of $${minSalary}.  Evaluate the following job posting against the candidate's resume.  CRITICAL SCORING RULES: 1. If the job is an entry-level position, a non-coding role (like "Content Reviewer" or "Data Entry"), or clearly pays below $${minSalary} (e.g., hourly rates like \$14/hr), YOU MUST SCORE IT 1 OR 2.
+2. If the job requires fluent French, or is located entirely outside the US, score it a 1.
+3. Only score 8, 9, or 10 if the role is a senior-level software engineering or e-commerce development position.
+
+Job Posting:
+\${job.description}
+
+Candidate Resume:
+\${resumeText}
+
+OUTPUT FORMAT REQUIREMENT:
+You MUST respond entirely in valid JSON format. Do not use markdown blocks like \`\`\`json. Your response must match this exact structure:
+{
+  "score": <number between 1 and 10>,
+  "reasoning": "<string: detailed evaluation including strengths and weaknesses>",
+  "cover_letter": "<string: draft a compelling cover letter highlighting Shopify Plus and e-commerce architecture experience if the score is 8 or higher. Otherwise, leave empty.>"
+}`;
     try {
       const response = await fetch('http://localhost:11434/api/generate', {
         method: 'POST',
