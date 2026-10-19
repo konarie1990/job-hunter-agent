@@ -1,12 +1,12 @@
 CREATE TABLE IF NOT EXISTS search_settings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,
   min_salary INTEGER NOT NULL,
   work_model TEXT CHECK(work_model IN ('remote', 'hybrid', 'onsite')) NOT NULL,
   exclude_keywords TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS jobs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id INTEGER PRIMARY KEY,
   job_url TEXT NOT NULL,
   company TEXT NOT NULL,
   title TEXT NOT NULL,
