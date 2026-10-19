@@ -7,20 +7,19 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Change whatever SELECT statement is there to this:
-const jobsToEvaluate = db.prepare("SELECT * FROM jobs WHERE evaluation IS NULL").all();
+const selectJobsStmt = db.prepare("SELECT * FROM jobs WHERE status = 'extracted'");
 
 const updateJobStmt = db.prepare(`
   UPDATE jobs
   SET score = @score,
       reasoning = @reasoning,
-      cover_letter = @cover_letter
+      cover_letter = @cover_letter,
+      status = 'evaluated'
   WHERE id = @id
 `);
 
 async function evaluateJobs() {
   /** @type {Job[]} */
-  const selectJobsStmt = db.prepare("SELECT * FROM jobs WHERE evaluation IS NULL");
   const jobs = selectJobsStmt.all();
   console.log(`Found ${jobs.length} jobs to evaluate.`);
 
@@ -37,10 +36,10 @@ The candidate specializes in enterprise e-commerce architecture, Shopify Plus st
 3. Only score 8, 9, or 10 if the role is a senior-level software engineering or e-commerce development position.
 
 Job Posting:
-\${job.description}
+${job.description}
 
 Candidate Resume:
-\${resumeText}
+${resumeText}
 
 OUTPUT FORMAT REQUIREMENT:
 You MUST respond entirely in valid JSON format. Do not use markdown blocks like \`\`\`json. Your response must match this exact structure:
