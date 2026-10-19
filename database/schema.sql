@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS search_settings (
 
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY,
-  job_url TEXT NOT NULL,
+  job_url TEXT NOT NULL UNIQUE,
   company TEXT NOT NULL,
   title TEXT NOT NULL,
   salary_range TEXT NOT NULL,
