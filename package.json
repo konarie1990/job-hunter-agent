@@ -1,33 +1,29 @@
 {
-	"name": "sveltekit-ui",
-	"private": true,
-	"version": "0.0.1",
-	"type": "module",
-	"scripts": {
-		"dev": "vite dev",
-		"build": "vite build",
-		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
-	},
-	"devDependencies": {
-		"@sveltejs/adapter-auto": "^8.0.0",
-		"@sveltejs/kit": "^3.0.0",
-		"@sveltejs/vite-plugin-svelte": "^7.2.0",
-		"svelte": "^5.57.1",
-		"svelte-check": "^4.6.0",
-		"typescript": "^6.0.3",
-		"vite": "^8.3.0"
-	},
-	"imports": {
-		"#lib": "./src/lib/index.js",
-		"#lib/*": "./src/lib/*"
-	},
-	"dependencies": {
-		"better-sqlite3": "^13.0.3",
-		"concurrently": "^10.0.6",
-		"crawlee": "^3.18.2",
-		"node-cron": "^4.6.0"
-	}
+  "name": "job-hunter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start:agent": "concurrently \"vite dev\" \"node scripts/scheduler.js\""
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^3.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "svelte": "^4.2.7",
+    "tailwindcss": "^3.4.3",
+    "vite": "^5.0.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "concurrently": "^8.2.2",
+    "crawlee": "^3.8.2",
+    "node-cron": "^3.0.3",
+    "playwright": "^1.42.1"
+  }
 }
