@@ -26,11 +26,8 @@ const insertJobStmt = db.prepare(`
   )
 `);
 
-// Replace the DuckDuckGo string with this direct array
-const startUrl = [
-  'https://jobs.lever.co/wmg/d15787fb-5f2e-4d60-bdd0-8459aac1c1a8', // Real Shopify Dev Job
-  'https://jobs.lever.co/bloom/9901ce9c-47ab-44d4-9e97-fe090a5829a1' // Ecommerce Director Job
-];
+const startUrl = 'https://www.bing.com/search?q=site:boards.greenhouse.io+OR+site:jobs.lever.co+"Shopify"';
+
 const crawler = new PlaywrightCrawler({
   headless: false, // Opens a real browser window so you can see the DDG page!
   preNavigationHooks: [
@@ -44,19 +41,18 @@ const crawler = new PlaywrightCrawler({
   async requestHandler({ request, page, enqueueLinks, log }) {
     log.info(`Processing: ${request.url}`);
 
-    if (request.url.includes('duckduckgo.com')) {
+    if (request.url.includes('bing.com')) {
       await enqueueLinks({
-        selector: 'a.result__url, a.result__snippet',
+        selector: 'a',
         transformRequestFunction(req) {
           try {
-            // Extract the actual URL from DuckDuckGo's redirect parameter
+            // Extract the actual URL from Bing's search results
             const urlObj = new URL(req.url);
-            if (urlObj.searchParams.has('uddg')) {
-              req.url = decodeURIComponent(urlObj.searchParams.get('uddg'));
-            }
-            // Only enqueue Greenhouse and Lever links
-            if (req.url.includes('boards.greenhouse.io') || req.url.includes('jobs.lever.co')) {
-              return req;
+            if (urlObj.searchParams.has('q')) {
+              const query = urlObj.searchParams.get('q');
+              if (query.includes('boards.greenhouse.io') || query.includes('jobs.lever.co')) {
+                return req;
+              }
             }
           } catch (e) { }
           return false;

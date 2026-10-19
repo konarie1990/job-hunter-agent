@@ -1,8 +1,7 @@
-/**
- * @typedef {import('../shared.d.ts').Job} Job
- */
-
-import db from '../src/lib/db.js';
+const fs = require('fs');
+const path = require('path');
+const fetch = require('node-fetch');
+const db = require('../src/lib/db.js');
 
 const selectJobsStmt = db.prepare(`
   SELECT * FROM jobs
@@ -23,7 +22,10 @@ async function evaluateJobs() {
   console.log(`Found ${jobs.length} jobs to evaluate.`);
 
   for (const job of jobs) {
-    const prompt = `You are an expert technical recruiter. Evaluate this job posting for a Senior E-commerce Web Developer who specializes in Shopify Plus, Liquid, Node.js, and modern frontend frameworks. Job Title: ${job.title}. Company: ${job.company}. Description: ${job.description}. Return a JSON object with exactly three keys: 'score' (an integer from 1 to 10 based on how well it matches a Senior Shopify Developer profile), 'reasoning' (a 1-2 sentence explanation of the score), and 'cover_letter' (a brief, 3-paragraph tailored cover letter highlighting 4.5 years of Shopify and e-commerce experience).`;
+    const resumePath = path.join(__dirname, '..', 'resume.md');
+    const resumeText = fs.readFileSync(resumePath, 'utf8');
+
+    const prompt = `You are an expert technical recruiter. Evaluate this job posting against the candidate's provided resume. Resume: ${resumeText}. Job Title: ${job.title}. Company: ${job.company}. Description: ${job.description}. Return a JSON object with exactly three keys: 'score' (an integer from 1 to 10 based strictly on how well the job requirements align with the candidate's resume experience), 'reasoning' (1-2 sentences explaining the score based on specific resume matches or gaps), and 'cover_letter' (a 3-paragraph cover letter tailored to this specific job that explicitly highlights overlapping projects, e-commerce architecture experience, and technologies from the resume).`;
 
     try {
       const response = await fetch('http://localhost:11434/api/generate', {
