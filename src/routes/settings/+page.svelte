@@ -4,6 +4,72 @@
 
 <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
   <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 sm:p-8">
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">Data Sources</h1>
+
+    <form method="POST" class="space-y-6">
+      <div>
+        <label for="source_type" class="block text-sm font-medium text-gray-700">Source Type</label>
+        <input
+          type="text"
+          id="source_type"
+          name="source_type"
+          class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+          required
+        />
+      </div>
+
+      <div>
+        <label for="query_url" class="block text-sm font-medium text-gray-700">Query URL</label>
+        <input
+          type="text"
+          id="query_url"
+          name="query_url"
+          class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+          required
+        />
+      </div>
+
+      <div>
+        <label for="is_active" class="block text-sm font-medium text-gray-700">Is Active</label>
+        <input
+          type="checkbox"
+          id="is_active"
+          name="is_active"
+          class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+        />
+      </div>
+
+      <div class="pt-4 border-t border-gray-200">
+        <button
+          type="submit"
+          name="action"
+          value="addSource"
+          class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+        >
+          Add Source
+        </button>
+      </div>
+    </form>
+
+    <ul>
+      {#each data.sources as source (source.id)}
+        <li>
+          {source.source_type} - {source.query_url} - {source.is_active ? 'Active' : 'Inactive'}
+          <form method="POST" class="inline">
+            <input type="hidden" name="id" value={source.id} />
+            <button
+              type="submit"
+              name="action"
+              value="deleteSource"
+              class="ml-2 inline-flex justify-center rounded-md border border-transparent bg-red-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+            >
+              Delete
+            </button>
+          </form>
+        </li>
+      {/each}
+    </ul>
+
     <h1 class="text-2xl font-bold text-gray-900 mb-6">Search Settings</h1>
 
     {#if form?.success}
