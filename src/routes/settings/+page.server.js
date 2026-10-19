@@ -27,7 +27,7 @@ export const actions = {
     const work_models = data.getAll('work_model').join(',');
     const include_keywords = data.get('include_keywords') || '';
     const exclude_keywords = data.get('exclude_keywords') || '';
-    const target_senders = data.get('target_senders') || '';
+    const target_senders = data.get('target_senders') || 'alert@indeed.com, jobalerts-noreply@linkedin.com';
     const blocked_senders = data.get('blocked_senders') || '';
 
     db.prepare('UPDATE settings SET min_salary = ?, work_models = ?, include_keywords = ?, exclude_keywords = ?, target_senders = ?, blocked_senders = ? WHERE id = 1')

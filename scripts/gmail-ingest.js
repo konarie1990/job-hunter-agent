@@ -119,11 +119,17 @@ async function ingestGmailAlerts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const settings = db.prepare('SELECT target_senders, blocked_senders FROM settings WHERE id = 1').get();
-  const targetSenders = settings.target_senders.split(',').map(sender => sender.trim());
-  const blockedSenders = settings.blocked_senders.split(',').map(sender => sender.trim());
+  const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  const rawSenders = settingsRow?.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com';
+  
+  // Split by comma, trim whitespace, fix the .com.com typo if it's in the DB, and join with OR
+  const formattedSenders = rawSenders
+    .split(',')
+    .map(s => s.trim().replace('.com.com', '.com'))
+    .filter(s => s.length > 0)
+    .join(' OR ');
 
-  const query = `from:(${targetSenders.map(sender => sender.includes('@') ? sender : `@${sender}`)}.com) newer_than:30d`;
+  const query = `from:(${formattedSenders}) newer_than:30d`;
   console.log(`[Gmail Ingest] Querying messages with filter: "${query}"...`);
 
   let pageToken = undefined;

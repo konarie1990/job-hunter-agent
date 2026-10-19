@@ -103,7 +103,7 @@
         <textarea
           name="target_senders"
           class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.target_senders || ""}</textarea
+          >{data.settings?.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com'}</textarea
         >
         <p class="text-xs text-gray-500 mt-1">
           Emails from these senders will be processed.
@@ -117,7 +117,7 @@
         <textarea
           name="blocked_senders"
           class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.blocked_senders || ""}</textarea
+          >{data.settings?.blocked_senders || ''}</textarea
         >
         <p class="text-xs text-gray-500 mt-1">
           Emails from these senders will be skipped.
