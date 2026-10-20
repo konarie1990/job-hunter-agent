@@ -104,15 +104,20 @@ async function extractPendingJobs() {
           updateJobClosedStmt.run({ id: job.id });
         } else {
           const bodyText = await page.evaluate(() => {
-            // LinkedIn's common description containers
-            const linkedinNode = document.querySelector('article, main, .jobs-description, #job-details, .jobs-description-content__text');
-            // Indeed's common description container
-            const indeedNode = document.querySelector('#jobDescriptionText');
+            // Remove junk elements before reading content
+            document
+              .querySelectorAll('header, footer, nav, aside, .global-footer, .global-nav, #global-nav, [role="navigation"]')
+              .forEach((el) => el.remove());
 
-            if (linkedinNode) return linkedinNode.innerText;
-            if (indeedNode) return indeedNode.innerText;
+            // Target core job containers
+            const container = document.querySelector(
+              '.jobs-description-content__text, #job-details, article, .job-view-layout, #jobDescriptionText'
+            );
 
-            // Fallback to the whole body if the specific containers aren't found
+            if (container) {
+              return container.innerText;
+            }
+
             return document.body ? document.body.innerText : '';
           });
           const cleanedDescription = cleanText(bodyText);
