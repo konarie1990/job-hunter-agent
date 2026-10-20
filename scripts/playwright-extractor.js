@@ -28,6 +28,12 @@ const updateJobSuccessStmt = db.prepare(`
   WHERE id = @id
 `);
 
+const updateJobClosedStmt = db.prepare(`
+  UPDATE jobs
+  SET status = 'closed'
+  WHERE id = @id
+`);
+
 const updateJobFailedStmt = db.prepare(`
   UPDATE jobs
   SET status = 'failed'
@@ -87,27 +93,38 @@ async function extractPendingJobs() {
           await page.waitForTimeout(60000);
         }
 
-        const bodyText = await page.evaluate(() => {
-          // LinkedIn's common description containers
-          const linkedinNode = document.querySelector('.jobs-description-content__text, .show-more-less-html__markup');
-          // Indeed's common description container
-          const indeedNode = document.querySelector('#jobDescriptionText');
-
-          if (linkedinNode) return linkedinNode.innerText;
-          if (indeedNode) return indeedNode.innerText;
-
-          // Fallback to the whole body if the specific containers aren't found
-          return document.body ? document.body.innerText : '';
-        });
-        const cleanedDescription = cleanText(bodyText);
-
-        updateJobSuccessStmt.run({
-          id: job.id,
-          title: pageTitle.trim(),
-          description: cleanedDescription,
+        const isClosed = await page.evaluate(() => {
+          const bodyText = document.body ? document.body.innerText : '';
+          const lowerText = bodyText.toLowerCase();
+          return lowerText.includes('no longer accepting applications') || lowerText.includes('no longer available');
         });
 
-        console.log(`[Playwright Extractor] Successfully extracted job ID ${job.id}: "${pageTitle.trim()}"`);
+        if (isClosed) {
+          console.log(`[Playwright Extractor] Job ID ${job.id} is closed (no longer accepting applications / available).`);
+          updateJobClosedStmt.run({ id: job.id });
+        } else {
+          const bodyText = await page.evaluate(() => {
+            // LinkedIn's common description containers
+            const linkedinNode = document.querySelector('.jobs-description-content__text, .show-more-less-html__markup');
+            // Indeed's common description container
+            const indeedNode = document.querySelector('#jobDescriptionText');
+
+            if (linkedinNode) return linkedinNode.innerText;
+            if (indeedNode) return indeedNode.innerText;
+
+            // Fallback to the whole body if the specific containers aren't found
+            return document.body ? document.body.innerText : '';
+          });
+          const cleanedDescription = cleanText(bodyText);
+
+          updateJobSuccessStmt.run({
+            id: job.id,
+            title: pageTitle.trim(),
+            description: cleanedDescription,
+          });
+
+          console.log(`[Playwright Extractor] Successfully extracted job ID ${job.id}: "${pageTitle.trim()}"`);
+        }
       } catch (err) {
         console.error(`[Playwright Extractor] Failed to extract job ID ${job.id} (${job.url}):`, err.message);
         updateJobFailedStmt.run({ id: job.id });
