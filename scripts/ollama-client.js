@@ -28,8 +28,11 @@ async function evaluateJobs() {
     const resumePath = path.join(__dirname, '..', 'resume.md');
     const resumeText = fs.readFileSync(resumePath, 'utf8');
 
-    const settings = db.prepare('SELECT min_salary FROM settings WHERE id = 1').get();
-    const minSalary = settings?.min_salary || 140000;
+    const settings = db.prepare('SELECT min_salary, custom_ollama_rules FROM settings WHERE id = 1').get();
+    const minSalary = settings?.min_salary || 150000;
+    const customRules = settings?.custom_ollama_rules
+      ? `\nADDITIONAL LEARNED SCORING RULES FROM USER FEEDBACK:\n${settings.custom_ollama_rules}\n`
+      : '';
 
     const prompt = `You are a ruthless technical recruiter evaluating a job posting for a Senior Web Developer and Full-Stack Software Engineer. 
 The candidate specializes in enterprise e-commerce architecture, Shopify Plus storefront development, and serverless backend integrations (AWS Lambda, Node.js). They are highly proficient in Liquid, Remix, Vue.js, React, and SvelteKit. They are based near Denver, Colorado, and require a minimum salary of $${minSalary}. Evaluate the following job posting against the candidate's resume. CRITICAL SCORING RULES: 1. If the job is an entry-level position, a non-coding role (like "Content Reviewer" or "Data Entry"), or clearly pays below $${minSalary} (e.g., hourly rates like \$14/hr), YOU MUST SCORE IT 1 OR 2.
@@ -47,7 +50,7 @@ You MUST respond entirely in valid JSON format. Do not use markdown blocks like 
 {
   "score": <number between 1 and 10>,
   "reasoning": "<string: detailed evaluation including strengths and weaknesses>",
-  "cover_letter": "<string: draft a compelling cover letter highlighting Shopify Plus and e-commerce architecture experience if the score is 8 or higher. Otherwise, leave empty.>",
+"cover_letter": "<string: ONLY draft a cover letter if the score is 9 or 10. If the score is 8 or below, leave this entirely empty.>",
   "cleaned_description": "<string: concise, clean, well-formatted markdown version of the job description removing headers, footers, and web scraper noise>"
 }`;
     try {

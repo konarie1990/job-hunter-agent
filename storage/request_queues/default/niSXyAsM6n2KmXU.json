@@ -1,0 +1,9 @@
+{
+	"id": "niSXyAsM6n2KmXU",
+	"json": "{\"id\":\"niSXyAsM6n2KmXU\",\"url\":\"https://www.bing.com/search?q=site%3Aboards.greenhouse.io+%22Shopify%22+intitle%3Adeveloper\",\"loadedUrl\":\"https://www.bing.com/search?q=site%3Aboards.greenhouse.io+%22Shopify%22+intitle%3Adeveloper\",\"uniqueKey\":\"https://www.bing.com/search?q=site%3Aboards.greenhouse.io+%22Shopify%22+intitle%3Adeveloper\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-10-19T16:04:19.537Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.bing.com/search?q=site%3Aboards.greenhouse.io+%22Shopify%22+intitle%3Adeveloper",
+	"url": "https://www.bing.com/search?q=site%3Aboards.greenhouse.io+%22Shopify%22+intitle%3Adeveloper"
+}

@@ -1,0 +1,9 @@
+{
+	"id": "4TNymIRi5pNehEb",
+	"json": "{\"id\":\"4TNymIRi5pNehEb\",\"url\":\"https://www.bing.com/search?q=site%3Ajobs.ashbyhq.com+%22Shopify%22+intitle%3Adeveloper\",\"loadedUrl\":\"https://www.bing.com/search?q=site%3Ajobs.ashbyhq.com+%22Shopify%22+intitle%3Adeveloper\",\"uniqueKey\":\"https://www.bing.com/search?q=site%3Ajobs.ashbyhq.com+%22Shopify%22+intitle%3Adeveloper\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-10-19T16:04:22.578Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.bing.com/search?q=site%3Ajobs.ashbyhq.com+%22Shopify%22+intitle%3Adeveloper",
+	"url": "https://www.bing.com/search?q=site%3Ajobs.ashbyhq.com+%22Shopify%22+intitle%3Adeveloper"
+}

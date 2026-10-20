@@ -12,12 +12,15 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', 'database', 'jobs.sqlite');
 const db = new Database(DB_PATH);
 
+const settings = db.prepare('SELECT extract_limit FROM settings WHERE id = 1').get();
+const EXTRACT_LIMIT = settings?.extract_limit || 10;
+
 const selectPendingJobsStmt = db.prepare(`
   SELECT id, url
   FROM jobs
   WHERE status = 'pending'
-  ORDER BY id ASC
-  LIMIT 50
+  ORDER BY id DESC
+  LIMIT ?
 `);
 
 const updateJobSuccessStmt = db.prepare(`
@@ -44,7 +47,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getRandomDelay(minSeconds = 3, maxSeconds = 7) {
+function getRandomDelay(minSeconds = 1.5, maxSeconds = 3.5) {
   const min = minSeconds * 1000;
   const max = maxSeconds * 1000;
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -59,16 +62,27 @@ function cleanText(text) {
 }
 
 async function extractPendingJobs() {
-  /** @type {{ id: number, url: string }[]} */
-  const pendingJobs = selectPendingJobsStmt.all();
-  console.log(`[Playwright Extractor] Found ${pendingJobs.length} pending jobs to extract.`);
+  const pendingJobs = selectPendingJobsStmt.all(EXTRACT_LIMIT);
+  console.log(`[Playwright Extractor] Found ${pendingJobs.length} pending jobs to extract (Limit: ${EXTRACT_LIMIT}).`);
 
   if (pendingJobs.length === 0) {
     return;
   }
 
   const browserProfilePath = path.join(__dirname, '..', 'browser_profile');
-  const browser = await chromium.launchPersistentContext(browserProfilePath, { headless: false, userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' });
+  const browser = await chromium.launchPersistentContext(browserProfilePath, {
+    headless: false,
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  });
+
+  // SPEED OPTIMIZATION: Block images, fonts, and media across all pages
+  await browser.route('**/*', (route) => {
+    const type = route.request().resourceType();
+    if (['image', 'media', 'font'].includes(type)) {
+      return route.abort();
+    }
+    return route.continue();
+  });
 
   try {
     for (let i = 0; i < pendingJobs.length; i++) {
@@ -79,12 +93,11 @@ async function extractPendingJobs() {
 
       try {
         await page.goto(job.url, {
-          timeout: 30000,
+          timeout: 20000,
           waitUntil: 'domcontentloaded',
         });
 
-        // Wait for redirects to login walls to complete
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(1200);
 
         const pageTitle = (await page.title()) || 'Untitled Position';
 
@@ -93,34 +106,55 @@ async function extractPendingJobs() {
           await page.waitForTimeout(60000);
         }
 
-        const isClosed = await page.evaluate(() => {
-          const bodyText = document.body ? document.body.innerText : '';
-          const lowerText = bodyText.toLowerCase();
-          return lowerText.includes('no longer accepting applications') || lowerText.includes('no longer available');
+        // Expand "Show more" on LinkedIn if folded
+        await page.evaluate(() => {
+          const btn = document.querySelector('.show-more-less-html__button--more, button[aria-label*="Click to see more description"]');
+          if (btn) btn.click();
+        }).catch(() => { });
+
+        const result = await page.evaluate(() => {
+          const rawBody = document.body ? document.body.innerText.toLowerCase() : '';
+          const isClosed =
+            rawBody.includes('no longer accepting applications') ||
+            rawBody.includes('no longer available') ||
+            rawBody.includes('this job is expired');
+
+          if (isClosed) return { closed: true, text: '' };
+
+          // Aggressively strip all non-job noise from DOM
+          document.querySelectorAll(
+            'header, footer, nav, aside, script, style, noscript, svg, button, ' +
+            '.global-footer, .global-nav, #global-nav, [role="navigation"], ' +
+            '.similar-jobs, .jobs-similar-jobs, .jobs-company, .jobs-poster, ' +
+            '.job-view-layout > aside, .artdeco-card.ember-view:not(.jobs-description)'
+          ).forEach((el) => el.remove());
+
+          const selectors = [
+            '.jobs-description__content',
+            '.jobs-description-content__text',
+            '.show-more-less-html__markup',
+            '#job-details',
+            '#jobDescriptionText',
+            '.jobsearch-JobComponent-description',
+            'article',
+            'main'
+          ];
+
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el && el.innerText.trim().length > 150) {
+              return { closed: false, text: el.innerText };
+            }
+          }
+
+          return { closed: false, text: document.body ? document.body.innerText : '' };
         });
 
-        if (isClosed) {
-          console.log(`[Playwright Extractor] Job ID ${job.id} is closed (no longer accepting applications / available).`);
+        if (result.closed) {
+          console.log(`[Playwright Extractor] Job ID ${job.id} is closed. Skipping.`);
           updateJobClosedStmt.run({ id: job.id });
         } else {
-          const bodyText = await page.evaluate(() => {
-            // Remove junk elements before reading content
-            document
-              .querySelectorAll('header, footer, nav, aside, .global-footer, .global-nav, #global-nav, [role="navigation"]')
-              .forEach((el) => el.remove());
-
-            // Target core job containers
-            const container = document.querySelector(
-              '.jobs-description-content__text, #job-details, article, .job-view-layout, #jobDescriptionText'
-            );
-
-            if (container) {
-              return container.innerText;
-            }
-
-            return document.body ? document.body.innerText : '';
-          });
-          const cleanedDescription = cleanText(bodyText);
+          const cleanedDescription = cleanText(result.text);
 
           updateJobSuccessStmt.run({
             id: job.id,
@@ -138,8 +172,7 @@ async function extractPendingJobs() {
       }
 
       if (i < pendingJobs.length - 1) {
-        const delay = getRandomDelay(3, 7);
-        console.log(`[Playwright Extractor] Waiting ${(delay / 1000).toFixed(1)}s before next request...`);
+        const delay = getRandomDelay(1.5, 3.5);
         await sleep(delay);
       }
     }

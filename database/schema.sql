@@ -18,3 +18,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
   status TEXT CHECK(status IN ('pending_review', 'applied', 'rejected')) NOT NULL DEFAULT 'pending_review'
 );
+
+CREATE TABLE IF NOT EXISTS sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL, -- 'google_api', 'ats_endpoint', 'rss_feed'
+    query_url TEXT NOT NULL,   -- The actual URL or the search string
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

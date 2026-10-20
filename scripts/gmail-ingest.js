@@ -121,15 +121,15 @@ async function ingestGmailAlerts() {
 
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
   const rawSenders = settingsRow?.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com';
-  
-  // Split by comma, trim whitespace, fix the .com.com typo if it's in the DB, and join with OR
+  const gmailDays = settingsRow?.gmail_days || 1;
+
   const formattedSenders = rawSenders
     .split(',')
     .map(s => s.trim().replace('.com.com', '.com'))
     .filter(s => s.length > 0)
     .join(' OR ');
 
-  const query = `from:(${formattedSenders}) newer_than:30d`;
+  const query = `from:(${formattedSenders}) newer_than:${gmailDays}d`;
   console.log(`[Gmail Ingest] Querying messages with filter: "${query}"...`);
 
   let pageToken = undefined;

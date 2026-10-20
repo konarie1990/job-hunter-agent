@@ -1,0 +1,9 @@
+{
+	"id": "RQX50DMDJLdQefD",
+	"json": "{\"id\":\"RQX50DMDJLdQefD\",\"url\":\"https://www.bing.com/search?q=site%3Ajobs.lever.co+%22Shopify%22+intitle%3Aengineer\",\"loadedUrl\":\"https://www.bing.com/search?q=site%3Ajobs.lever.co+%22Shopify%22+intitle%3Aengineer\",\"uniqueKey\":\"https://www.bing.com/search?q=site%3Ajobs.lever.co+%22Shopify%22+intitle%3Aengineer\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-10-19T16:04:20.476Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.bing.com/search?q=site%3Ajobs.lever.co+%22Shopify%22+intitle%3Aengineer",
+	"url": "https://www.bing.com/search?q=site%3Ajobs.lever.co+%22Shopify%22+intitle%3Aengineer"
+}

@@ -1,134 +1,270 @@
 <script>
   import { enhance } from "$app/forms";
   let { data, form } = $props();
+  let isRunning = $state(false);
+  let isOptimizing = $state(false);
 </script>
 
-<div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-6 sm:p-8">
-    <h1 class="text-2xl font-bold text-gray-900 mb-6">Search Settings</h1>
-
-    {#if form?.success}
-      <div
-        class="mb-6 p-4 rounded-md bg-green-50 border border-green-200 text-sm text-green-800"
-      >
-        Settings saved successfully.
-      </div>
-    {/if}
-
+<div class="max-w-3xl mx-auto p-6 space-y-8">
+  <!-- Manual Pipeline Trigger -->
+  <div
+    class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between gap-4"
+  >
+    <div>
+      <h2 class="text-lg font-bold text-gray-900">
+        1. Manual Pipeline Trigger
+      </h2>
+      <p class="text-sm text-gray-500">
+        Ingest emails, extract up to {data.settings?.extract_limit ?? 10} pending
+        jobs, and score with Ollama.
+      </p>
+    </div>
     <form
       method="POST"
-      action="?/saveSettings"
-      use:enhance
-      class="bg-white rounded-lg border border-gray-200 shadow-sm p-6"
+      action="?/runManualPipeline"
+      use:enhance={() => {
+        isRunning = true;
+        return async ({ update }) => {
+          await update();
+          isRunning = false;
+        };
+      }}
     >
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Minimum Salary ($/yr)</label
+      <button
+        type="submit"
+        disabled={isRunning}
+        class="px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 disabled:opacity-50 transition cursor-pointer shrink-0"
+      >
+        {isRunning ? "Running Pipeline..." : "Run Pipeline Now"}
+      </button>
+    </form>
+  </div>
+
+  <!-- Manual Gemini Prompt Optimizer (RLHF) -->
+  <div
+    class="bg-gradient-to-r from-emerald-50 to-teal-50 p-6 rounded-xl shadow-sm border border-emerald-200 flex items-center justify-between gap-4"
+  >
+    <div class="space-y-1">
+      <h2 class="text-lg font-bold text-emerald-950">
+        2. Gemini Prompt Optimizer (Manual RLHF)
+      </h2>
+      <p class="text-sm text-emerald-800">
+        Logged Feedback: <strong
+          >{data.feedbackCounts?.applied_count || 0} Applied (👍)</strong
         >
-        <input
-          type="number"
-          name="min_salary"
-          value={data.settings?.min_salary || ""}
-          class="w-full border border-gray-300 rounded-md p-2"
-        />
+        &middot;
+        <strong>{data.feedbackCounts?.trashed_count || 0} Removed (👎)</strong>
+      </p>
+      <p class="text-xs text-emerald-700">
+        Uses 1 single Gemini API call to analyze what you applied to vs. what
+        you removed, and rewrites Ollama's scoring rules.
+      </p>
+    </div>
+    <form
+      method="POST"
+      action="?/optimizePromptWithGemini"
+      use:enhance={() => {
+        isOptimizing = true;
+        return async ({ update }) => {
+          await update();
+          isOptimizing = false;
+        };
+      }}
+    >
+      <button
+        type="submit"
+        disabled={isOptimizing}
+        class="px-5 py-2.5 bg-emerald-700 text-white font-semibold rounded-lg shadow hover:bg-emerald-800 disabled:opacity-50 transition cursor-pointer shrink-0"
+      >
+        {isOptimizing
+          ? "Analyzing with Gemini..."
+          : "✨ Optimize Ollama Prompt"}
+      </button>
+    </form>
+  </div>
+
+  {#if form?.message}
+    <div
+      class="p-4 rounded-lg border text-sm font-medium {form?.error
+        ? 'bg-red-50 border-red-200 text-red-800'
+        : 'bg-green-50 border-green-200 text-green-800'}"
+    >
+      {form.message}
+    </div>
+  {/if}
+
+  <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+    <h1 class="text-xl font-bold text-gray-900 mb-6">
+      Pipeline & Search Settings
+    </h1>
+
+    <form method="POST" action="?/saveSettings" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label
+            for="gmail_days"
+            class="block text-sm font-medium text-gray-700 mb-1"
+            >Email Lookback (Days)</label
+          >
+          <input
+            id="gmail_days"
+            name="gmail_days"
+            type="number"
+            min="1"
+            max="60"
+            value={data.settings?.gmail_days ?? 1}
+            class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          />
+          <span class="text-xs text-gray-500">e.g. 1 = past 24 hours</span>
+        </div>
+
+        <div>
+          <label
+            for="extract_limit"
+            class="block text-sm font-medium text-gray-700 mb-1"
+            >Max Jobs Per Run</label
+          >
+          <input
+            id="extract_limit"
+            name="extract_limit"
+            type="number"
+            min="1"
+            max="100"
+            value={data.settings?.extract_limit ?? 10}
+            class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          />
+          <span class="text-xs text-gray-500">Playwright scrape limit</span>
+        </div>
+
+        <div>
+          <label
+            for="min_salary"
+            class="block text-sm font-medium text-gray-700 mb-1"
+            >Minimum Salary ($/yr)</label
+          >
+          <input
+            id="min_salary"
+            name="min_salary"
+            type="number"
+            value={data.settings?.min_salary ?? 150000}
+            class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          />
+        </div>
       </div>
 
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-2"
-          >Work Model</label
+      <div>
+        <label
+          for="custom_ollama_rules"
+          class="block text-sm font-bold text-emerald-800 mb-1"
         >
-        <div class="flex gap-6">
-          <label class="flex items-center text-sm text-gray-700">
+          Learned Ollama Scoring Rules (Generated by Gemini or Edited Manually)
+        </label>
+        <textarea
+          id="custom_ollama_rules"
+          name="custom_ollama_rules"
+          rows="6"
+          placeholder="Click 'Optimize Ollama Prompt' above after marking a few jobs as Applied or Removed..."
+          class="w-full rounded-lg border-emerald-300 bg-emerald-50/30 border p-3 text-sm font-mono"
+          >{data.settings?.custom_ollama_rules || ""}</textarea
+        >
+      </div>
+
+      <div>
+        <span class="block text-sm font-medium text-gray-700 mb-2"
+          >Work Model</span
+        >
+        <div class="flex gap-6 text-sm">
+          <label class="flex items-center gap-2">
             <input
               type="checkbox"
-              name="work_model"
-              value="Remote"
-              checked={data.settings?.work_models?.includes("Remote")}
-              class="mr-2"
+              name="remote"
+              checked={Boolean(data.settings?.remote ?? 1)}
             /> Remote
           </label>
-          <label class="flex items-center text-sm text-gray-700">
+          <label class="flex items-center gap-2">
             <input
               type="checkbox"
-              name="work_model"
-              value="Hybrid"
-              checked={data.settings?.work_models?.includes("Hybrid")}
-              class="mr-2"
+              name="hybrid"
+              checked={Boolean(data.settings?.hybrid ?? 1)}
             /> Hybrid
           </label>
-          <label class="flex items-center text-sm text-gray-700">
+          <label class="flex items-center gap-2">
             <input
               type="checkbox"
-              name="work_model"
-              value="Onsite"
-              checked={data.settings?.work_models?.includes("Onsite")}
-              class="mr-2"
+              name="onsite"
+              checked={Boolean(data.settings?.onsite ?? 0)}
             /> Onsite
           </label>
         </div>
       </div>
 
-      <div class="mb-4">
-        <label class="block text-sm font-bold text-green-700 mb-1"
-          >Target Keywords (MUST INCLUDE - comma-separated)</label
-        >
-        <textarea
-          name="include_keywords"
-          class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.include_keywords || ""}</textarea
-        >
-        <p class="text-xs text-gray-500 mt-1">
-          Jobs MUST contain at least one of these words to be saved.
-        </p>
-      </div>
-
-      <div class="mb-6">
-        <label class="block text-sm font-bold text-red-700 mb-1"
-          >Exclude Keywords (comma-separated)</label
-        >
-        <textarea
-          name="exclude_keywords"
-          class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.exclude_keywords || ""}</textarea
-        >
-        <p class="text-xs text-gray-500 mt-1">
-          Jobs containing ANY of these words will be skipped.
-        </p>
-      </div>
-
-      <div class="mb-4">
-        <label class="block text-sm font-bold text-blue-700 mb-1"
+      <div>
+        <label
+          for="target_senders"
+          class="block text-sm font-medium text-gray-700 mb-1"
           >Target Email Senders (comma-separated)</label
         >
         <textarea
+          id="target_senders"
           name="target_senders"
-          class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com'}</textarea
+          rows="2"
+          class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          >{data.settings?.target_senders ||
+            "alert@indeed.com, jobalerts-noreply@linkedin.com"}</textarea
         >
-        <p class="text-xs text-gray-500 mt-1">
-          Emails from these senders will be processed.
-        </p>
       </div>
 
-      <div class="mb-6">
-        <label class="block text-sm font-bold text-purple-700 mb-1"
-          >Blocked Email Senders (comma-separated)</label
+      <div>
+        <label
+          for="blocked_senders"
+          class="block text-sm font-medium text-gray-700 mb-1"
+          >Blocked / Scam Senders (comma-separated)</label
         >
         <textarea
+          id="blocked_senders"
           name="blocked_senders"
-          class="w-full border border-gray-300 rounded-md p-2"
-          >{data.settings?.blocked_senders || ''}</textarea
+          rows="2"
+          class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          >{data.settings?.blocked_senders || ""}</textarea
         >
-        <p class="text-xs text-gray-500 mt-1">
-          Emails from these senders will be skipped.
-        </p>
+      </div>
+
+      <div>
+        <label
+          for="target_keywords"
+          class="block text-sm font-medium text-green-700 mb-1"
+          >Target Keywords (comma-separated)</label
+        >
+        <textarea
+          id="target_keywords"
+          name="target_keywords"
+          rows="2"
+          class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          >{data.settings?.target_keywords || ""}</textarea
+        >
+      </div>
+
+      <div>
+        <label
+          for="exclude_keywords"
+          class="block text-sm font-medium text-red-700 mb-1"
+          >Exclude Keywords (comma-separated)</label
+        >
+        <textarea
+          id="exclude_keywords"
+          name="exclude_keywords"
+          rows="2"
+          class="w-full rounded-lg border-gray-300 border p-2 text-sm"
+          >{data.settings?.exclude_keywords || ""}</textarea
+        >
       </div>
 
       <button
         type="submit"
-        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium"
-        >Save Settings</button
+        class="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition cursor-pointer"
       >
+        Save Settings
+      </button>
     </form>
   </div>
 </div>

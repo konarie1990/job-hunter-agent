@@ -1,3 +1,10 @@
+<script>
+  import "../app.css"; // This turns on Tailwind!
+  let { children } = $props();
+</script>
+
+<!-- Keep the <nav> HTML as is... -->
+
 <nav class="bg-white border-b border-gray-200">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div class="flex justify-between h-16">
@@ -22,6 +29,7 @@
   </div>
 </nav>
 
+<!-- Update the bottom <main> block -->
 <main class="min-h-screen bg-gray-50 py-8">
-  <slot />
+  {@render children()}
 </main>
