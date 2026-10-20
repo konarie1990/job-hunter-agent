@@ -83,7 +83,10 @@
               </div>
             {/if}
             <div
-              class="text-sm text-gray-700 whitespace-pre-wrap break-words {expanded[job.id] ? '' : 'line-clamp-10'}"
+              class="text-sm text-gray-700 whitespace-pre-wrap break-words"
+              style={expanded[job.id]
+                ? ''
+                : 'display: -webkit-box; -webkit-line-clamp: 10; -webkit-box-orient: vertical; overflow: hidden;'}
             >
               {desc}
             </div>
