@@ -3,3 +3,10 @@ node_modules/
 .env
 database/*.sqlite
 database/*.sqlite-journal
+.aider*
+credentials.json
+token.json
+browser_profile/
+database/*.sqlite
+node_modules/
+.env
