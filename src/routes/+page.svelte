@@ -70,8 +70,18 @@
         </div>
 
         {#if job.cleaned_description || job.description}
+          {@const isRaw = !job.cleaned_description}
           {@const desc = job.cleaned_description || job.description}
           <div class="mt-4">
+            {#if isRaw}
+              <div class="mb-2">
+                <span
+                  class="inline-block px-2 py-0.5 text-xs font-medium italic bg-amber-100 text-amber-900 rounded border border-amber-200"
+                >
+                  [Raw Web Extraction - Pending AI Cleanup]
+                </span>
+              </div>
+            {/if}
             <div
               class="text-sm text-gray-700 whitespace-pre-wrap break-words {expanded[job.id] ? '' : 'line-clamp-10'}"
             >

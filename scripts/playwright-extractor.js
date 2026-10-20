@@ -105,7 +105,7 @@ async function extractPendingJobs() {
         } else {
           const bodyText = await page.evaluate(() => {
             // LinkedIn's common description containers
-            const linkedinNode = document.querySelector('.jobs-description-content__text, .show-more-less-html__markup');
+            const linkedinNode = document.querySelector('article, main, .jobs-description, #job-details, .jobs-description-content__text');
             // Indeed's common description container
             const indeedNode = document.querySelector('#jobDescriptionText');
 
