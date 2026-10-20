@@ -87,7 +87,18 @@ async function extractPendingJobs() {
           await page.waitForTimeout(60000);
         }
 
-        const bodyText = await page.evaluate(() => document.body ? document.body.innerText : '');
+        const bodyText = await page.evaluate(() => {
+          // LinkedIn's common description containers
+          const linkedinNode = document.querySelector('.jobs-description-content__text, .show-more-less-html__markup');
+          // Indeed's common description container
+          const indeedNode = document.querySelector('#jobDescriptionText');
+
+          if (linkedinNode) return linkedinNode.innerText;
+          if (indeedNode) return indeedNode.innerText;
+
+          // Fallback to the whole body if the specific containers aren't found
+          return document.body ? document.body.innerText : '';
+        });
         const cleanedDescription = cleanText(bodyText);
 
         updateJobSuccessStmt.run({
@@ -101,7 +112,7 @@ async function extractPendingJobs() {
         console.error(`[Playwright Extractor] Failed to extract job ID ${job.id} (${job.url}):`, err.message);
         updateJobFailedStmt.run({ id: job.id });
       } finally {
-        await page.close().catch(() => {});
+        await page.close().catch(() => { });
       }
 
       if (i < pendingJobs.length - 1) {
