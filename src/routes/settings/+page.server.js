@@ -1,79 +1,48 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 const db = new Database(path.resolve('database/jobs.sqlite'));
 
-// Auto-migrate any missing columns in the settings table so saveSettings never crashes
 function ensureSettingsColumns() {
-  const existingCols = db
-    .prepare('PRAGMA table_info(settings)')
-    .all()
-    .map((c) => c.name);
-
-  const requiredCols = [
-    ['min_salary', 'INTEGER DEFAULT 150000'],
-    ['remote', 'INTEGER DEFAULT 1'],
-    ['hybrid', 'INTEGER DEFAULT 1'],
-    ['onsite', 'INTEGER DEFAULT 0'],
-    ['target_keywords', "TEXT DEFAULT ''"],
-    ['exclude_keywords', "TEXT DEFAULT ''"],
-    ['target_senders', "TEXT DEFAULT 'alert@indeed.com, jobalerts-noreply@linkedin.com'"],
-    ['blocked_senders', "TEXT DEFAULT ''"],
-    ['extract_limit', 'INTEGER DEFAULT 10'],
-    ['gmail_days', 'INTEGER DEFAULT 1'],
-    ['custom_ollama_rules', "TEXT DEFAULT ''"],
-    ['schedules', "TEXT DEFAULT ''"]
-  ];
-
-  for (const [colName, colDef] of requiredCols) {
-    if (!existingCols.includes(colName)) {
-      db.prepare(`ALTER TABLE settings ADD COLUMN ${colName} ${colDef}`).run();
-    }
-  }
-
-  // Ensure row id = 1 exists
-  const row = db.prepare('SELECT id FROM settings WHERE id = 1').get();
-  if (!row) {
-    db.prepare('INSERT INTO settings (id, min_salary) VALUES (1, 150000)').run();
+  const existingCols = db.prepare('PRAGMA table_info(settings)').all().map((c) => c.name);
+  if (!existingCols.includes('ollama_model')) {
+    db.prepare("ALTER TABLE settings ADD COLUMN ollama_model TEXT DEFAULT 'qwen2.5-coder:7b'").run();
   }
 }
-
 ensureSettingsColumns();
 
-const DEFAULT_SCHEDULES = [
-  {
-    id: 'morning-mst',
-    name: 'Morning Fast Scan (6:00 AM MT)',
-    time: '06:00',
-    enabled: true,
-    extract_limit: 10,
-    target_senders: 'alert@indeed.com, jobalerts-noreply@linkedin.com',
-    target_keywords: 'Shopify, e-commerce, Liquid, SvelteKit, React'
-  },
-  {
-    id: 'evening-mst',
-    name: 'Evening Deep Scan (8:00 PM MT)',
-    time: '20:00',
-    enabled: true,
-    extract_limit: 25,
-    target_senders: 'alert@indeed.com, jobalerts-noreply@linkedin.com',
-    target_keywords: 'Shopify, e-commerce, Liquid, SvelteKit, React'
-  }
-];
-
-export function load() {
-  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  let schedules = DEFAULT_SCHEDULES;
+// Helper to query local Ollama models
+async function fetchLocalOllamaModels() {
   try {
-    if (settings?.schedules) {
-      const parsed = JSON.parse(settings.schedules);
-      if (Array.isArray(parsed) && parsed.length > 0) schedules = parsed;
+    const res = await fetch('http://localhost:11434/api/tags');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.models && Array.isArray(data.models)) {
+        return data.models.map((m) => m.name);
+      }
     }
   } catch {
-    schedules = DEFAULT_SCHEDULES;
+    // Ollama might not be running or reachable at moment of load
+  }
+  return ['qwen2.5-coder:7b', 'llama3:8b', 'phi3:3.5b'];
+}
+
+export async function load() {
+  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+
+  // Load resume versions history
+  const resumeVersions = db.prepare('SELECT * FROM resume_versions ORDER BY id DESC').all();
+  const activeResume = resumeVersions[0] || { id: null, content: '# No resume found in vault' };
+
+  let schedules = [];
+  try {
+    schedules = settings?.schedules ? JSON.parse(settings.schedules) : [];
+  } catch {
+    schedules = [];
   }
 
   const feedbackCounts = db.prepare(`
@@ -83,7 +52,16 @@ export function load() {
     FROM jobs
   `).get();
 
-  return { settings, schedules, feedbackCounts };
+  const availableModels = await fetchLocalOllamaModels();
+
+  return {
+    settings,
+    schedules,
+    resumeVersions,
+    activeResume,
+    availableModels,
+    feedbackCounts
+  };
 }
 
 export const actions = {
@@ -98,15 +76,17 @@ export const actions = {
     const gmail_days = Number(formData.get('gmail_days')) || 1;
     const custom_ollama_rules = String(formData.get('custom_ollama_rules') || '');
     const schedulesJson = String(formData.get('schedules_json') || '[]');
+    const ollama_model = String(formData.get('ollama_model') || 'qwen2.5-coder:7b');
+    const gemini_model = String(formData.get('gemini_model') || 'gemini-3.8-flash');
 
-    let parsedSchedules = DEFAULT_SCHEDULES;
+    let parsedSchedules = [];
     try {
       parsedSchedules = JSON.parse(schedulesJson);
     } catch {
-      // fallback
+      parsedSchedules = [];
     }
 
-    const primary = parsedSchedules[0] || DEFAULT_SCHEDULES[0];
+    const primary = parsedSchedules[0] || {};
 
     db.prepare(`
       UPDATE settings
@@ -121,24 +101,31 @@ export const actions = {
           extract_limit = ?,
           gmail_days = ?,
           custom_ollama_rules = ?,
-          schedules = ?
+          schedules = ?,
+          ollama_model = ?,
+          gemini_model = ?
       WHERE id = 1
     `).run(
-      min_salary,
-      remote,
-      hybrid,
-      onsite,
-      primary.target_keywords || '',
-      exclude_keywords,
+      min_salary, remote, hybrid, onsite,
+      primary.target_keywords || '', exclude_keywords,
       primary.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com',
-      blocked_senders,
-      Number(primary.extract_limit) || 10,
-      gmail_days,
-      custom_ollama_rules,
-      JSON.stringify(parsedSchedules)
+      blocked_senders, Number(primary.extract_limit) || 10,
+      gmail_days, custom_ollama_rules, JSON.stringify(parsedSchedules), ollama_model, gemini_model
     );
 
-    return { success: true, message: 'Schedules, keyword boosters, and search parameters saved!' };
+    return { success: true, message: 'Settings, Ollama & Gemini model selections saved!' };
+  },
+
+  saveNewResumeVersion: async ({ request }) => {
+    const formData = await request.formData();
+    const content = String(formData.get('resume_content') || '').trim();
+
+    if (!content) {
+      return { error: true, message: 'Resume content cannot be empty.' };
+    }
+
+    db.prepare('INSERT INTO resume_versions (content) VALUES (?)').run(content);
+    return { success: true, message: 'New immutable resume version saved to vault!' };
   },
 
   runManualPipeline: async ({ request }) => {
@@ -158,76 +145,67 @@ export const actions = {
       await execAsync('node scripts/gmail-ingest.js', { env });
       await execAsync('node scripts/playwright-extractor.js', { env });
       await execAsync('node scripts/ollama-client.js', { env });
-      return {
-        success: true,
-        message: `Manual pipeline run completed (${manualLimit} max jobs)! Head to Job Hunter Feed to view your scored matches.`
-      };
+      return { success: true, message: 'Manual pipeline run completed successfully!' };
     } catch (err) {
       return { error: true, message: err.message || 'Error running pipeline' };
     }
   },
 
   optimizePromptWithGemini: async () => {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
     if (!apiKey) {
-      return { error: true, message: 'GEMINI_API_KEY missing in .env file.' };
+      try {
+        const envPath = path.resolve('..', '.env');
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+        for (const line of envContent.split('\n')) {
+          if (line.startsWith('GEMINI_API_KEY=')) {
+            apiKey = line.split('=')[1].trim().replace(/['"]/g, '');
+            break;
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
 
-    const appliedJobs = db.prepare(`
-      SELECT title, score, reasoning FROM jobs WHERE COALESCE(applied, 0) = 1 ORDER BY id DESC LIMIT 15
-    `).all();
+    if (!apiKey) {
+      return {
+        error: true,
+        message: 'GEMINI_API_KEY missing. Check your root .env file.'
+      };
+    }
 
-    const trashedJobs = db.prepare(`
-      SELECT title, score, reasoning, user_feedback FROM jobs WHERE COALESCE(trashed, 0) = 1 ORDER BY id DESC LIMIT 20
-    `).all();
+    // Read selected Gemini model from database (default to gemini-3.8-flash)
+    const settings = db.prepare('SELECT gemini_model, custom_ollama_rules FROM settings WHERE id = 1').get();
+    const geminiModel = settings?.gemini_model || 'gemini-3.8-flash';
+
+    const appliedJobs = db.prepare('SELECT title, score, reasoning FROM jobs WHERE COALESCE(applied, 0) = 1 ORDER BY id DESC LIMIT 15').all();
+    const trashedJobs = db.prepare('SELECT title, score, reasoning, user_feedback FROM jobs WHERE COALESCE(trashed, 0) = 1 ORDER BY id DESC LIMIT 20').all();
 
     if (appliedJobs.length === 0 && trashedJobs.length === 0) {
-      return { error: true, message: 'Mark at least a few jobs as "Applied" or "Remove" on the Feed first!' };
+      return { error: true, message: 'Mark at least a few jobs as Applied or Removed first!' };
     }
 
-    const settings = db.prepare('SELECT custom_ollama_rules FROM settings WHERE id = 1').get();
-
     const geminiPrompt = `You are a Prompt Engineering Optimizer for a local Ollama job-scoring agent.
-The candidate is a Senior Web Developer & Storefront Lead specializing in Shopify Plus, Liquid, modern e-commerce architecture, SvelteKit, React, Vue, and serverless Node.js/AWS integrations.
-
-Here are the jobs the user ACTUALLY APPLIED FOR (Thumbs Up):
-${JSON.stringify(appliedJobs, null, 2)}
-
-Here are the jobs the user REMOVED/TRASHED (Thumbs Down, including feedback):
-${JSON.stringify(trashedJobs, null, 2)}
-
-Current Custom Rules:
-${settings?.custom_ollama_rules || 'None yet.'}
-
-Write a concise, bulleted list of 4 to 8 strict scoring rules to inject into Ollama's system prompt so it scores jobs like the "Applied" ones 9-10 and jobs like the "Trashed" ones 1-3.
-Return ONLY the bulleted rules in plain text, no intro or outro.`;
+Here are the jobs the user APPLIED FOR: ${JSON.stringify(appliedJobs)}
+Here are the jobs the user REMOVED: ${JSON.stringify(trashedJobs)}
+Current Rules: ${settings?.custom_ollama_rules || 'None.'}
+Write 4 to 8 strict scoring rules as bullet points. Return ONLY plain text bullet points.`;
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: geminiPrompt }] }]
-          })
-        }
-      );
-
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: geminiPrompt }] }] })
+      });
       const json = await response.json();
-      if (!response.ok) {
-        throw new Error(json.error?.message || 'Gemini API request failed');
-      }
+      if (!response.ok) throw new Error(json.error?.message || 'Gemini API failed');
 
       const newRules = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-      if (newRules) {
-        db.prepare('UPDATE settings SET custom_ollama_rules = ? WHERE id = 1').run(newRules);
-      }
+      if (newRules) db.prepare('UPDATE settings SET custom_ollama_rules = ? WHERE id = 1').run(newRules);
 
-      return {
-        success: true,
-        message: 'Gemini analyzed your feedback and updated your Ollama scoring rules!'
-      };
+      return { success: true, message: `Gemini (${geminiModel}) optimized your Ollama scoring rules!` };
     } catch (err) {
       return { error: true, message: `Gemini Error: ${err.message}` };
     }

@@ -8,6 +8,7 @@
   let jumpPage = $state(1);
   let clientOllamaBusy = $state(false);
   let evaluatingJobId = $state(null);
+  let generatingCoverLetterId = $state(null);
 
   let isOllamaLocked = $derived(clientOllamaBusy || Boolean(data.ollamaBusy));
 
@@ -143,11 +144,11 @@
         >
           <a
             href="/?filter={data.filter}&sort=score_desc&page=1"
-            class="px-2.5 py-1 rounded-md transition {data.sort !== 'score_asc'
+            class="px-2 py-1 rounded-md transition {data.sort === 'score_desc'
               ? 'bg-white text-gray-900 shadow-sm'
               : 'text-gray-600 hover:text-gray-900'}"
           >
-            ★ Rated Highest &rarr; Lowest
+            ★ High&rarr;Low
           </a>
           <a
             href="/?filter={data.filter}&sort=score_asc&page=1"
@@ -155,7 +156,23 @@
               ? 'bg-white text-gray-900 shadow-sm'
               : 'text-gray-600 hover:text-gray-900'}"
           >
-            ☆ Rated Lowest &rarr; Highest
+            ☆ Low&rarr;High
+          </a>
+          <a
+            href="/?filter={data.filter}&sort=date_desc&page=1"
+            class="px-2.5 py-1 rounded-md transition {data.sort === 'date_desc'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'}"
+          >
+            🕒 Newest
+          </a>
+          <a
+            href="/?filter={data.filter}&sort=date_asc&page=1"
+            class="px-2.5 py-1 rounded-md transition {data.sort === 'date_asc'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'}"
+          >
+            📜 Oldest
           </a>
         </div>
 
@@ -616,17 +633,89 @@
                   class="text-xs uppercase tracking-wider text-emerald-900"
                   >Tailored Cover Letter:</strong
                 >
-                <button
-                  type="button"
-                  onclick={() => copyCoverLetter(job.id, job.cover_letter)}
-                  class="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition cursor-pointer"
-                >
-                  {copied[job.id] ? "✓ Copied!" : "Copy Cover Letter"}
-                </button>
+                <div class="flex items-center gap-2">
+                  <form
+                    method="POST"
+                    action="?/generateCoverLetter&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                    use:enhance={() => {
+                      generatingCoverLetterId = job.id;
+                      return async ({ update }) => {
+                        await update({ reset: false });
+                        generatingCoverLetterId = null;
+                      };
+                    }}
+                  >
+                    <input type="hidden" name="id" value={job.id} />
+                    <button
+                      type="submit"
+                      disabled={generatingCoverLetterId === job.id}
+                      class="px-2.5 py-1 bg-emerald-700 text-white text-xs font-semibold rounded hover:bg-emerald-800 disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
+                      title="Force Ollama to regenerate this cover letter"
+                    >
+                      {#if generatingCoverLetterId === job.id}
+                        <span
+                          class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"
+                        ></span>
+                        <span>Regenerating...</span>
+                      {:else}
+                        <span>↻ Regenerate</span>
+                      {/if}
+                    </button>
+                  </form>
+                  <button
+                    type="button"
+                    onclick={() => copyCoverLetter(job.id, job.cover_letter)}
+                    class="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition cursor-pointer"
+                  >
+                    {copied[job.id] ? "✓ Copied!" : "Copy Cover Letter"}
+                  </button>
+                </div>
               </div>
               <div class="text-sm text-gray-800 whitespace-pre-wrap">
                 {job.cover_letter}
               </div>
+            </div>
+          {:else if job.status === "evaluated"}
+            <div
+              class="bg-gray-50 border border-gray-200 p-4 rounded-lg flex items-center justify-between gap-4"
+            >
+              <div>
+                <strong
+                  class="text-xs uppercase tracking-wider text-gray-700 block"
+                  >Cover Letter:</strong
+                >
+                <span class="text-xs text-gray-500"
+                  >Not generated (Score was 8 or below during initial
+                  evaluation).</span
+                >
+              </div>
+              <form
+                method="POST"
+                action="?/generateCoverLetter&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                use:enhance={() => {
+                  generatingCoverLetterId = job.id;
+                  return async ({ update }) => {
+                    await update({ reset: false });
+                    generatingCoverLetterId = null;
+                  };
+                }}
+              >
+                <input type="hidden" name="id" value={job.id} />
+                <button
+                  type="submit"
+                  disabled={generatingCoverLetterId === job.id}
+                  class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition cursor-pointer shadow-xs flex items-center gap-2"
+                >
+                  {#if generatingCoverLetterId === job.id}
+                    <span
+                      class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"
+                    ></span>
+                    <span>Generating Cover Letter...</span>
+                  {:else}
+                    <span>✨ Generate Cover Letter</span>
+                  {/if}
+                </button>
+              </form>
             </div>
           {/if}
         </div>

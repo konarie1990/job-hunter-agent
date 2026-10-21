@@ -17,7 +17,6 @@ function ensureJobsTimestampColumn() {
     db.prepare('ALTER TABLE jobs ADD COLUMN created_at TEXT').run();
   }
 
-  // Backfill NULL created_at with staggered timestamps based on ID so older rows show realistic relative age
   db.prepare(`
     UPDATE jobs 
     SET created_at = datetime('now', '-' || ((SELECT MAX(id) FROM jobs) - id) * 3 || ' minutes')
@@ -27,7 +26,6 @@ function ensureJobsTimestampColumn() {
 
 ensureJobsTimestampColumn();
 
-// Server-wide lock so multiple clicks cannot stack or crash Ollama
 let activeOllamaJobId = null;
 
 export async function load({ url }) {
@@ -39,7 +37,7 @@ export async function load({ url }) {
     SELECT 
       SUM(CASE WHEN status = 'pending' AND COALESCE(trashed, 0) = 0 THEN 1 ELSE 0 END) as pending_scrape,
       SUM(CASE WHEN status = 'extracted' AND COALESCE(trashed, 0) = 0 THEN 1 ELSE 0 END) as pending_ollama,
-      SUM(CASE WHEN status = 'evaluated' AND COALESCE(trashed, 0) = 0 THEN 1 ELSE 0 END) as evaluated,
+      SUM(CASE WHEN status = 'evaluated' AND COALESCE(trashed, 0) = 0 AND COALESCE(applied, 0) = 0 THEN 1 ELSE 0 END) as evaluated,
       SUM(CASE WHEN COALESCE(applied, 0) = 1 AND COALESCE(trashed, 0) = 0 THEN 1 ELSE 0 END) as applied,
       SUM(CASE WHEN COALESCE(trashed, 0) = 1 THEN 1 ELSE 0 END) as trashed,
       SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed
@@ -48,7 +46,7 @@ export async function load({ url }) {
 
   let whereClause = "WHERE status != 'closed' AND COALESCE(trashed, 0) = 0";
   if (filter === 'evaluated') {
-    whereClause = "WHERE status = 'evaluated' AND COALESCE(trashed, 0) = 0";
+    whereClause = "WHERE status = 'evaluated' AND COALESCE(trashed, 0) = 0 AND COALESCE(applied, 0) = 0";
   } else if (filter === 'applied') {
     whereClause = "WHERE COALESCE(applied, 0) = 1 AND COALESCE(trashed, 0) = 0";
   } else if (filter === 'pending') {
@@ -60,7 +58,11 @@ export async function load({ url }) {
   const orderByClause =
     sort === 'score_asc'
       ? 'ORDER BY COALESCE(score, 99) ASC, id DESC'
-      : 'ORDER BY COALESCE(score, -1) DESC, id DESC';
+      : sort === 'date_asc'
+        ? 'ORDER BY id ASC'
+        : sort === 'date_desc'
+          ? 'ORDER BY id DESC'
+          : 'ORDER BY COALESCE(score, -1) DESC, id DESC';
 
   const countResult = db.prepare(`SELECT COUNT(*) as count FROM jobs ${whereClause}`).get();
   const totalJobs = countResult?.count || 0;
@@ -148,6 +150,18 @@ export const actions = {
       return { ollamaError: true, message: err.message || 'Failed to evaluate job with Ollama' };
     } finally {
       activeOllamaJobId = null;
+    }
+  },
+
+  generateCoverLetter: async ({ request }) => {
+    const formData = await request.formData();
+    const id = Number(formData.get('id'));
+
+    try {
+      await execAsync(`node scripts/ollama-client.js --id=${id} --force-cover-letter`);
+      return { success: true };
+    } catch (err) {
+      return { error: true, message: err.message || 'Failed to generate cover letter' };
     }
   }
 };
