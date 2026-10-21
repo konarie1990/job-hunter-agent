@@ -1,13 +1,40 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
+const execAsync = promisify(exec);
 const db = new Database(path.resolve('database/jobs.sqlite'));
 
-export function load({ url }) {
-  const limit = 20;
-  const filter = url.searchParams.get('filter') || 'evaluated'; // Default to showing evaluated jobs!
+// Auto-ensure created_at column & backfill any NULL timestamps
+function ensureJobsTimestampColumn() {
+  const cols = db
+    .prepare('PRAGMA table_info(jobs)')
+    .all()
+    .map((c) => c.name);
 
-  // 1. Live Queue & Tracking Breakdown
+  if (!cols.includes('created_at')) {
+    db.prepare('ALTER TABLE jobs ADD COLUMN created_at TEXT').run();
+  }
+
+  // Backfill NULL created_at with staggered timestamps based on ID so older rows show realistic relative age
+  db.prepare(`
+    UPDATE jobs 
+    SET created_at = datetime('now', '-' || ((SELECT MAX(id) FROM jobs) - id) * 3 || ' minutes')
+    WHERE created_at IS NULL OR created_at = ''
+  `).run();
+}
+
+ensureJobsTimestampColumn();
+
+// Server-wide lock so multiple clicks cannot stack or crash Ollama
+let activeOllamaJobId = null;
+
+export async function load({ url }) {
+  const limit = 20;
+  const filter = url.searchParams.get('filter') || 'evaluated';
+  const sort = url.searchParams.get('sort') || 'score_desc';
+
   const stats = db.prepare(`
     SELECT 
       SUM(CASE WHEN status = 'pending' AND COALESCE(trashed, 0) = 0 THEN 1 ELSE 0 END) as pending_scrape,
@@ -19,7 +46,6 @@ export function load({ url }) {
     FROM jobs
   `).get();
 
-  // 2. Build WHERE clause based on selected filter tab
   let whereClause = "WHERE status != 'closed' AND COALESCE(trashed, 0) = 0";
   if (filter === 'evaluated') {
     whereClause = "WHERE status = 'evaluated' AND COALESCE(trashed, 0) = 0";
@@ -30,6 +56,11 @@ export function load({ url }) {
   } else if (filter === 'trashed') {
     whereClause = "WHERE COALESCE(trashed, 0) = 1";
   }
+
+  const orderByClause =
+    sort === 'score_asc'
+      ? 'ORDER BY COALESCE(score, 99) ASC, id DESC'
+      : 'ORDER BY COALESCE(score, -1) DESC, id DESC';
 
   const countResult = db.prepare(`SELECT COUNT(*) as count FROM jobs ${whereClause}`).get();
   const totalJobs = countResult?.count || 0;
@@ -42,7 +73,7 @@ export function load({ url }) {
   const jobs = db.prepare(`
     SELECT * FROM jobs 
     ${whereClause}
-    ORDER BY COALESCE(score, -1) DESC, id DESC 
+    ${orderByClause}
     LIMIT ? OFFSET ?
   `).all(limit, offset);
 
@@ -52,10 +83,13 @@ export function load({ url }) {
     jobs,
     stats,
     filter,
+    sort,
     totalJobs,
     currentPage: page,
     totalPages,
-    settings
+    settings,
+    ollamaBusy: activeOllamaJobId !== null,
+    activeOllamaJobId
   };
 }
 
@@ -81,5 +115,39 @@ export const actions = {
     const id = Number(formData.get('id'));
     db.prepare('UPDATE jobs SET trashed = 0, user_feedback = NULL WHERE id = ?').run(id);
     return { success: true };
+  },
+
+  scrapeSingleJob: async ({ request }) => {
+    const formData = await request.formData();
+    const id = Number(formData.get('id'));
+
+    try {
+      await execAsync(`node scripts/playwright-extractor.js --id=${id}`);
+      return { scrapeSuccess: true, scrapedId: id };
+    } catch (err) {
+      return { scrapeError: true, message: err.message || 'Failed to scrape job with Playwright' };
+    }
+  },
+
+  evaluateSingleJob: async ({ request }) => {
+    const formData = await request.formData();
+    const id = Number(formData.get('id'));
+
+    if (activeOllamaJobId !== null) {
+      return {
+        ollamaError: true,
+        message: `Ollama is currently busy evaluating Job #${activeOllamaJobId}. Please wait for it to finish.`
+      };
+    }
+
+    activeOllamaJobId = id;
+    try {
+      await execAsync(`node scripts/ollama-client.js --id=${id}`);
+      return { ollamaSuccess: true, evaluatedId: id };
+    } catch (err) {
+      return { ollamaError: true, message: err.message || 'Failed to evaluate job with Ollama' };
+    } finally {
+      activeOllamaJobId = null;
+    }
   }
 };

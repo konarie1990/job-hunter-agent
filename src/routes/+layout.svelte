@@ -1,35 +1,34 @@
 <script>
-  import "../app.css"; // This turns on Tailwind!
+  import "../app.css";
   let { children } = $props();
 </script>
 
-<!-- Keep the <nav> HTML as is... -->
-
-<nav class="bg-white border-b border-gray-200">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    <div class="flex justify-between h-16">
-      <div class="flex items-center space-x-8">
-        <a href="/" class="text-xl font-bold text-gray-900">Job Hunter</a>
-        <div class="flex space-x-4">
+<div class="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-8">
+        <a href="/" class="text-xl font-black tracking-tight text-gray-900"
+          >Job Hunter</a
+        >
+        <nav class="flex items-center gap-2">
           <a
             href="/"
-            class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+            class="px-3 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 transition"
           >
-            Dashboard
+            Job Hunter Feed
           </a>
           <a
             href="/settings"
-            class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+            class="px-3 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-100 transition"
           >
-            Settings
+            Settings & Prompt AI
           </a>
-        </div>
+        </nav>
       </div>
     </div>
-  </div>
-</nav>
+  </header>
 
-<!-- Update the bottom <main> block -->
-<main class="min-h-screen bg-gray-50 py-8">
-  {@render children()}
-</main>
+  <main class="flex-1 pb-16">
+    {@render children()}
+  </main>
+</div>

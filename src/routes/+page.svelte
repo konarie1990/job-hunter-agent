@@ -1,11 +1,15 @@
 <script>
-  import { goto } from '$app/navigation';
-  import { enhance } from '$app/forms';
-  let { data } = $props();
+  import { goto } from "$app/navigation";
+  import { enhance } from "$app/forms";
+  let { data, form } = $props();
 
   let expanded = $state({});
   let copied = $state({});
   let jumpPage = $state(1);
+  let clientOllamaBusy = $state(false);
+  let evaluatingJobId = $state(null);
+
+  let isOllamaLocked = $derived(clientOllamaBusy || Boolean(data.ollamaBusy));
 
   function toggleExpand(id) {
     expanded[id] = !expanded[id];
@@ -20,158 +24,322 @@
     }, 2000);
   }
 
-  function formatDate(dateStr) {
-    if (!dateStr) return 'Just now';
-    const date = new Date(dateStr);
-    return isNaN(date.getTime()) ? dateStr : date.toLocaleString();
+  function formatRelativeTime(dateStr) {
+    if (!dateStr) return "Recently";
+    const normalized = dateStr.includes("T")
+      ? dateStr
+      : dateStr.replace(" ", "T") + "Z";
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return dateStr;
+
+    const diffMs = Date.now() - date.getTime();
+    const totalMinutes = Math.max(1, Math.floor(diffMs / 60000));
+    const totalHours = Math.floor(totalMinutes / 60);
+    const days = Math.floor(totalHours / 24);
+    const remHours = totalHours % 24;
+
+    if (totalMinutes < 60) {
+      return `${totalMinutes}m ago`;
+    } else if (days === 0) {
+      return `${totalHours}h ago`;
+    } else if (remHours > 0) {
+      return `${days}d ${remHours}h ago`;
+    } else {
+      return `${days}d ago`;
+    }
   }
 
-  function getOrigin(url = '') {
+  function getOrigin(url = "") {
     const lower = url.toLowerCase();
-    if (lower.includes('linkedin.com')) return { name: 'LinkedIn', classes: 'bg-blue-100 text-blue-800 border-blue-300' };
-    if (lower.includes('indeed.com')) return { name: 'Indeed', classes: 'bg-indigo-100 text-indigo-800 border-indigo-300' };
-    return { name: 'Email Alert', classes: 'bg-gray-100 text-gray-800 border-gray-300' };
+    if (lower.includes("linkedin.com"))
+      return {
+        name: "LinkedIn",
+        classes: "bg-blue-100 text-blue-800 border-blue-300",
+      };
+    if (lower.includes("indeed.com"))
+      return {
+        name: "Indeed",
+        classes: "bg-indigo-100 text-indigo-800 border-indigo-300",
+      };
+    return {
+      name: "Email Alert",
+      classes: "bg-gray-100 text-gray-800 border-gray-300",
+    };
   }
 
-  function getStatusBadge(status = '') {
+  function getStatusBadge(status = "") {
     switch (status) {
-      case 'evaluated':
-        return { label: '✓ Evaluated', classes: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
-      case 'extracted':
-        return { label: '⏳ Queued for Ollama', classes: 'bg-amber-100 text-amber-800 border-amber-300' };
-      case 'pending':
-        return { label: '🕒 Queued for Playwright', classes: 'bg-slate-100 text-slate-600 border-slate-300' };
-      case 'failed':
-        return { label: '⚠️ Extraction Failed', classes: 'bg-red-100 text-red-800 border-red-300' };
+      case "evaluated":
+        return {
+          label: "✓ Evaluated",
+          classes: "bg-emerald-100 text-emerald-800 border-emerald-300",
+        };
+      case "extracted":
+        return {
+          label: "⏳ Queued for Ollama",
+          classes: "bg-amber-100 text-amber-800 border-amber-300",
+        };
+      case "pending":
+        return {
+          label: "🕒 Queued for Playwright",
+          classes: "bg-slate-100 text-slate-600 border-slate-300",
+        };
+      case "failed":
+        return {
+          label: "⚠️ Extraction Failed",
+          classes: "bg-red-100 text-red-800 border-red-300",
+        };
       default:
-        return { label: status, classes: 'bg-gray-100 text-gray-700 border-gray-300' };
+        return {
+          label: status,
+          classes: "bg-gray-100 text-gray-700 border-gray-300",
+        };
     }
   }
 
   function handlePageJump(e) {
     e.preventDefault();
-    const target = Math.min(Math.max(1, Number(jumpPage) || 1), data.totalPages);
-    goto(`/?filter=${data.filter}&page=${target}`);
+    const target = Math.min(
+      Math.max(1, Number(jumpPage) || 1),
+      data.totalPages,
+    );
+    goto(`/?filter=${data.filter}&sort=${data.sort}&page=${target}`);
   }
 </script>
 
-<div class="max-w-5xl mx-auto p-6 space-y-6">
-  <!-- Top Header & Live Queue Monitor -->
-  <div class="flex flex-wrap items-center justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-900">Job Hunter Feed</h1>
-      <p class="text-sm text-gray-500">
-        Showing {data.jobs?.length || 0} of {data.totalJobs || 0} postings in current
-        view
-      </p>
+<!-- STICKY FLOATING COMMAND CENTER HEADER -->
+<div
+  class="sticky top-16 z-40 bg-white/95 backdrop-blur border-b border-gray-200 shadow-sm py-3 px-6 mb-6"
+>
+  <div class="max-w-7xl mx-auto space-y-3">
+    <!-- Top Row: Title, Sort Toggle, & Pagination -->
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center gap-4">
+        <div>
+          <h1 class="text-xl font-bold text-gray-900">Job Hunter Feed</h1>
+          <p class="text-xs text-gray-500">
+            Showing {data.jobs?.length || 0} of {data.totalJobs || 0} postings
+          </p>
+        </div>
+
+        {#if isOllamaLocked}
+          <div
+            class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold"
+          >
+            <span
+              class="w-3 h-3 border-2 border-amber-800 border-t-transparent rounded-full animate-spin"
+            ></span>
+            Ollama Busy Evaluating #{evaluatingJobId ||
+              data.activeOllamaJobId ||
+              "..."}
+          </div>
+        {/if}
+      </div>
+
+      <div class="flex items-center gap-3 flex-wrap">
+        <!-- Sort Toggle -->
+        <div
+          class="flex items-center bg-gray-100 p-1 rounded-lg border border-gray-200 text-xs font-semibold"
+        >
+          <a
+            href="/?filter={data.filter}&sort=score_desc&page=1"
+            class="px-2.5 py-1 rounded-md transition {data.sort !== 'score_asc'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'}"
+          >
+            ★ Rated Highest &rarr; Lowest
+          </a>
+          <a
+            href="/?filter={data.filter}&sort=score_asc&page=1"
+            class="px-2.5 py-1 rounded-md transition {data.sort === 'score_asc'
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'}"
+          >
+            ☆ Rated Lowest &rarr; Highest
+          </a>
+        </div>
+
+        <!-- Compact Top Pagination -->
+        <div
+          class="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200 text-sm"
+        >
+          <a
+            href="/?filter={data.filter}&sort={data.sort}&page=1"
+            class="font-medium hover:text-blue-600 {data.currentPage <= 1
+              ? 'pointer-events-none opacity-30'
+              : ''}">&laquo; First</a
+          >
+          <a
+            href="/?filter={data.filter}&sort={data.sort}&page={Math.max(
+              1,
+              data.currentPage - 1,
+            )}"
+            class="font-medium hover:text-blue-600 {data.currentPage <= 1
+              ? 'pointer-events-none opacity-30'
+              : ''}">&lsaquo; Prev</a
+          >
+
+          <span class="text-gray-300 px-1">|</span>
+          <span class="text-gray-700"
+            >Page <strong>{data.currentPage}</strong> of
+            <strong>{data.totalPages}</strong></span
+          >
+          <span class="text-gray-300 px-1">|</span>
+
+          <form onsubmit={handlePageJump} class="flex items-center gap-1.5">
+            <input
+              type="number"
+              min="1"
+              max={data.totalPages}
+              bind:value={jumpPage}
+              class="w-12 border rounded px-1.5 py-0.5 text-center text-xs bg-white"
+            />
+            <button
+              type="submit"
+              class="px-2 py-0.5 bg-gray-900 text-white rounded text-xs font-medium hover:bg-gray-800 cursor-pointer"
+            >
+              Go
+            </button>
+          </form>
+
+          <span class="text-gray-300 px-1">|</span>
+          <a
+            href="/?filter={data.filter}&sort={data.sort}&page={Math.min(
+              data.totalPages,
+              data.currentPage + 1,
+            )}"
+            class="font-medium hover:text-blue-600 {data.currentPage >=
+            data.totalPages
+              ? 'pointer-events-none opacity-30'
+              : ''}">Next &rsaquo;</a
+          >
+          <a
+            href="/?filter={data.filter}&sort={data.sort}&page={data.totalPages}"
+            class="font-medium hover:text-blue-600 {data.currentPage >=
+            data.totalPages
+              ? 'pointer-events-none opacity-30'
+              : ''}">Last &raquo;</a
+          >
+        </div>
+      </div>
     </div>
-    <a
-      href="/settings"
-      class="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800"
-    >
-      Settings, Manual Run & Prompt AI &rarr;
-    </a>
+
+    <!-- Bottom Row: Filter Tabs / Queue Counters (Preserves Current Sort State) -->
+    <div class="grid grid-cols-5 gap-2">
+      <a
+        href="/?filter=evaluated&sort={data.sort}&page=1"
+        class="px-3 py-2 rounded-lg border text-left transition flex items-center justify-between {data.filter ===
+        'evaluated'
+          ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-300'
+          : 'bg-white border-gray-200 hover:bg-gray-50'}"
+      >
+        <div>
+          <div class="text-[10px] font-bold uppercase text-emerald-800">
+            Evaluated Matches
+          </div>
+          <div class="text-sm font-black text-gray-900">
+            {data.stats?.evaluated || 0}
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/?filter=applied&sort={data.sort}&page=1"
+        class="px-3 py-2 rounded-lg border text-left transition flex items-center justify-between {data.filter ===
+        'applied'
+          ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-300'
+          : 'bg-white border-gray-200 hover:bg-gray-50'}"
+      >
+        <div>
+          <div class="text-[10px] font-bold uppercase text-blue-800">
+            Applied 👍
+          </div>
+          <div class="text-sm font-black text-gray-900">
+            {data.stats?.applied || 0}
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/?filter=pending&sort={data.sort}&page=1"
+        class="px-3 py-2 rounded-lg border text-left transition flex items-center justify-between {data.filter ===
+        'pending'
+          ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-300'
+          : 'bg-white border-gray-200 hover:bg-gray-50'}"
+      >
+        <div>
+          <div class="text-[10px] font-bold uppercase text-amber-800">
+            In Pipeline Queue
+          </div>
+          <div class="text-sm font-black text-gray-900">
+            {(data.stats?.pending_scrape || 0) +
+              (data.stats?.pending_ollama || 0)}
+          </div>
+          <div class="text-[10px] text-amber-700 font-medium">
+            {data.stats?.pending_ollama || 0} Ready for Ollama · {data.stats
+              ?.pending_scrape || 0} Unscraped
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/?filter=trashed&sort={data.sort}&page=1"
+        class="px-3 py-2 rounded-lg border text-left transition flex items-center justify-between {data.filter ===
+        'trashed'
+          ? 'bg-red-50 border-red-500 ring-1 ring-red-300'
+          : 'bg-white border-gray-200 hover:bg-gray-50'}"
+      >
+        <div>
+          <div class="text-[10px] font-bold uppercase text-red-800">
+            Removed Log 👎
+          </div>
+          <div class="text-sm font-black text-gray-900">
+            {data.stats?.trashed || 0}
+          </div>
+        </div>
+      </a>
+
+      <a
+        href="/?filter=all&sort={data.sort}&page=1"
+        class="px-3 py-2 rounded-lg border text-left transition flex items-center justify-between {data.filter ===
+        'all'
+          ? 'bg-gray-100 border-gray-500 ring-1 ring-gray-300'
+          : 'bg-white border-gray-200 hover:bg-gray-50'}"
+      >
+        <div>
+          <div class="text-[10px] font-bold uppercase text-gray-600">
+            All Active
+          </div>
+          <div class="text-sm font-black text-gray-900">
+            {(data.stats?.evaluated || 0) +
+              (data.stats?.pending_scrape || 0) +
+              (data.stats?.pending_ollama || 0)}
+          </div>
+        </div>
+      </a>
+    </div>
   </div>
+</div>
 
-  <!-- Live Pipeline Queue Status Bar & Filter Tabs -->
-  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
-    <a
-      href="/?filter=evaluated&page=1"
-      class="p-3 rounded-xl border text-left transition {data.filter ===
-      'evaluated'
-        ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-200'
-        : 'bg-white border-gray-200 hover:bg-gray-50'}"
+<!-- MAIN FEED CONTENT -->
+<div class="max-w-7xl mx-auto px-6 space-y-4">
+  {#if form?.ollamaError}
+    <div
+      class="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm font-medium"
     >
-      <div class="text-xs font-semibold uppercase text-emerald-700">
-        Evaluated Matches
-      </div>
-      <div class="text-2xl font-bold text-gray-900">
-        {data.stats?.evaluated || 0}
-      </div>
-      <div class="text-[11px] text-gray-500">Scored & Formatted</div>
-    </a>
-
-    <a
-      href="/?filter=applied&page=1"
-      class="p-3 rounded-xl border text-left transition {data.filter ===
-      'applied'
-        ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-200'
-        : 'bg-white border-gray-200 hover:bg-gray-50'}"
-    >
-      <div class="text-xs font-semibold uppercase text-blue-700">
-        Applied 👍
-      </div>
-      <div class="text-2xl font-bold text-gray-900">
-        {data.stats?.applied || 0}
-      </div>
-      <div class="text-[11px] text-gray-500">Used to train Gemini</div>
-    </a>
-
-    <a
-      href="/?filter=pending&page=1"
-      class="p-3 rounded-xl border text-left transition {data.filter ===
-      'pending'
-        ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-200'
-        : 'bg-white border-gray-200 hover:bg-gray-50'}"
-    >
-      <div class="text-xs font-semibold uppercase text-amber-700">
-        In Pipeline Queue
-      </div>
-      <div class="text-2xl font-bold text-gray-900">
-        {(data.stats?.pending_scrape || 0) + (data.stats?.pending_ollama || 0)}
-      </div>
-      <div class="text-[11px] text-gray-500">
-        {data.stats?.pending_scrape || 0} Scrape · {data.stats
-          ?.pending_ollama || 0} AI
-      </div>
-    </a>
-
-    <a
-      href="/?filter=trashed&page=1"
-      class="p-3 rounded-xl border text-left transition {data.filter ===
-      'trashed'
-        ? 'bg-red-50 border-red-500 ring-2 ring-red-200'
-        : 'bg-white border-gray-200 hover:bg-gray-50'}"
-    >
-      <div class="text-xs font-semibold uppercase text-red-700">
-        Removed Log 👎
-      </div>
-      <div class="text-2xl font-bold text-gray-900">
-        {data.stats?.trashed || 0}
-      </div>
-      <div class="text-[11px] text-gray-500">Used to train Gemini</div>
-    </a>
-
-    <a
-      href="/?filter=all&page=1"
-      class="p-3 rounded-xl border text-left transition {data.filter === 'all'
-        ? 'bg-gray-100 border-gray-500 ring-2 ring-gray-200'
-        : 'bg-white border-gray-200 hover:bg-gray-50'}"
-    >
-      <div class="text-xs font-semibold uppercase text-gray-600">
-        All Active
-      </div>
-      <div class="text-2xl font-bold text-gray-900">
-        {(data.stats?.evaluated || 0) +
-          (data.stats?.pending_scrape || 0) +
-          (data.stats?.pending_ollama || 0)}
-      </div>
-      <div class="text-[11px] text-gray-500">
-        {data.stats?.closed || 0} Closed Skipped
-      </div>
-    </a>
-  </div>
+      {form.message}
+    </div>
+  {/if}
 
   {#if !data.jobs || data.jobs.length === 0}
     <div
-      class="bg-white rounded-xl border border-gray-200 p-12 text-center space-y-3"
+      class="bg-white rounded-xl border border-gray-200 p-16 text-center space-y-3"
     >
       <h2 class="text-lg font-semibold text-gray-800">
         No jobs in the "{data.filter}" view
       </h2>
       <p class="text-sm text-gray-500">
-        Switch tabs above, or go to Settings to run the pipeline on more queued
-        jobs.
+        Switch tabs above or trigger a run from the Settings tab.
       </p>
     </div>
   {:else}
@@ -183,6 +351,9 @@
           job.cleaned_description ||
           job.description ||
           "Waiting in queue for Playwright to scrape this URL..."}
+        {@const isThisCardEvaluating =
+          evaluatingJobId === job.id || data.activeOllamaJobId === job.id}
+
         <div
           class="bg-white rounded-xl shadow-sm border {job.applied
             ? 'border-blue-400 ring-1 ring-blue-100'
@@ -208,8 +379,11 @@
                     ✓ APPLIED
                   </span>
                 {/if}
-                <span class="text-xs text-gray-400">
-                  Added: {formatDate(job.created_at)}
+                <span
+                  class="text-xs text-gray-400"
+                  title={job.created_at || ""}
+                >
+                  Added: {formatRelativeTime(job.created_at)}
                 </span>
               </div>
               <a
@@ -223,7 +397,9 @@
             </div>
 
             <!-- Right side: Score + Action Controls -->
-            <div class="flex items-center gap-3 shrink-0">
+            <div
+              class="flex items-center gap-2.5 shrink-0 flex-wrap justify-end"
+            >
               {#if job.score !== null && job.score !== undefined}
                 <div
                   class="px-3 py-1.5 rounded-lg font-bold text-sm border {job.score >=
@@ -237,8 +413,82 @@
                 </div>
               {/if}
 
+              <!-- Single-Job Queue Override Button (For Queued for Ollama or Re-Evaluating) -->
+              {#if job.status === "extracted" || job.status === "evaluated"}
+                <form
+                  method="POST"
+                  action="?/evaluateSingleJob&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                  use:enhance={() => {
+                    clientOllamaBusy = true;
+                    evaluatingJobId = job.id;
+                    return async ({ update }) => {
+                      await update({ reset: false });
+                      clientOllamaBusy = false;
+                      evaluatingJobId = null;
+                    };
+                  }}
+                >
+                  <input type="hidden" name="id" value={job.id} />
+                  <button
+                    type="submit"
+                    disabled={isOllamaLocked}
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition {isOllamaLocked
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60'
+                      : job.status === 'extracted'
+                        ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600 cursor-pointer shadow-xs'
+                        : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 cursor-pointer'}"
+                    title={isOllamaLocked
+                      ? "Ollama is currently busy evaluating a job"
+                      : "Override queue and evaluate this job right now with Ollama"}
+                  >
+                    {#if isThisCardEvaluating}
+                      <span
+                        class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
+                      ></span>
+                      <span>Evaluating...</span>
+                    {:else if isOllamaLocked}
+                      <span>⏳ Ollama Busy</span>
+                    {:else if job.status === "extracted"}
+                      <span>⚡ Run Ollama Now</span>
+                    {:else}
+                      <span>↻ Re-Score</span>
+                    {/if}
+                  </button>
+                </form>
+              {/if}
+
+              <!-- Single-Job Playwright Scrape Button (For Pending Cards) -->
+              {#if job.status === "pending"}
+                <form
+                  method="POST"
+                  action="?/scrapeSingleJob&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                  use:enhance={() => {
+                    return async ({ update }) => {
+                      await update({ reset: false });
+                    };
+                  }}
+                >
+                  <input type="hidden" name="id" value={job.id} />
+                  <button
+                    type="submit"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-white border border-slate-900 hover:bg-slate-700 transition cursor-pointer shadow-xs"
+                    title="Scrape this URL right now with Playwright"
+                  >
+                    ⚡ Scrape Now
+                  </button>
+                </form>
+              {/if}
+
               <!-- Applied Checkbox Form -->
-              <form method="POST" action="?/toggleApplied" use:enhance>
+              <form
+                method="POST"
+                action="?/toggleApplied&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                use:enhance={() => {
+                  return async ({ update }) => {
+                    await update({ reset: false });
+                  };
+                }}
+              >
                 <input type="hidden" name="id" value={job.id} />
                 <input
                   type="hidden"
@@ -264,7 +514,7 @@
               {#if !job.trashed}
                 <form
                   method="POST"
-                  action="?/trashJob"
+                  action="?/trashJob&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
                   use:enhance={({ formData }) => {
                     const reason = prompt(
                       "Optional: Why are you removing this job? (Helps Gemini improve your Ollama prompt)",
@@ -272,6 +522,9 @@
                     );
                     if (reason === null) return ({ cancel }) => cancel();
                     formData.set("reason", reason);
+                    return async ({ update }) => {
+                      await update({ reset: false });
+                    };
                   }}
                 >
                   <input type="hidden" name="id" value={job.id} />
@@ -279,13 +532,20 @@
                   <button
                     type="submit"
                     class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition cursor-pointer"
-                    title="Remove & log for Gemini prompt tuning"
                   >
                     ✕ Remove
                   </button>
                 </form>
               {:else}
-                <form method="POST" action="?/restoreJob" use:enhance>
+                <form
+                  method="POST"
+                  action="?/restoreJob&filter={data.filter}&sort={data.sort}&page={data.currentPage}"
+                  use:enhance={() => {
+                    return async ({ update }) => {
+                      await update({ reset: false });
+                    };
+                  }}
+                >
                   <input type="hidden" name="id" value={job.id} />
                   <button
                     type="submit"
@@ -311,8 +571,8 @@
             <div
               class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded inline-block"
             >
-              Scraped by Playwright — Waiting for Ollama to score & format
-              Markdown
+              Scraped by Playwright — Click "⚡ Run Ollama Now" on the right to
+              evaluate immediately, or let the next scheduled run process it.
             </div>
           {/if}
 
@@ -371,71 +631,6 @@
           {/if}
         </div>
       {/each}
-    </div>
-
-    <!-- Pagination Bar with Carets and Page Jump -->
-    <div
-      class="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200"
-    >
-      <div class="flex items-center gap-2">
-        <a
-          href="/?filter={data.filter}&page=1"
-          class="px-3 py-1.5 border rounded-lg text-sm font-medium hover:bg-gray-50 {data.currentPage <=
-          1
-            ? 'pointer-events-none opacity-40'
-            : ''}">&laquo; First</a
-        >
-        <a
-          href="/?filter={data.filter}&page={Math.max(1, data.currentPage - 1)}"
-          class="px-3 py-1.5 border rounded-lg text-sm font-medium hover:bg-gray-50 {data.currentPage <=
-          1
-            ? 'pointer-events-none opacity-40'
-            : ''}">&lsaquo; Prev</a
-        >
-      </div>
-
-      <form onsubmit={handlePageJump} class="flex items-center gap-2 text-sm">
-        <span class="text-gray-600"
-          >Page <strong>{data.currentPage}</strong> of
-          <strong>{data.totalPages}</strong></span
-        >
-        <span class="text-gray-300">|</span>
-        <label for="jump" class="text-gray-600">Go to:</label>
-        <input
-          id="jump"
-          type="number"
-          min="1"
-          max={data.totalPages}
-          bind:value={jumpPage}
-          class="w-16 border rounded px-2 py-1 text-center text-sm"
-        />
-        <button
-          type="submit"
-          class="px-2.5 py-1 bg-gray-800 text-white rounded text-xs font-semibold hover:bg-gray-700 cursor-pointer"
-        >
-          Go
-        </button>
-      </form>
-
-      <div class="flex items-center gap-2">
-        <a
-          href="/?filter={data.filter}&page={Math.min(
-            data.totalPages,
-            data.currentPage + 1,
-          )}"
-          class="px-3 py-1.5 border rounded-lg text-sm font-medium hover:bg-gray-50 {data.currentPage >=
-          data.totalPages
-            ? 'pointer-events-none opacity-40'
-            : ''}">Next &rsaquo;</a
-        >
-        <a
-          href="/?filter={data.filter}&page={data.totalPages}"
-          class="px-3 py-1.5 border rounded-lg text-sm font-medium hover:bg-gray-50 {data.currentPage >=
-          data.totalPages
-            ? 'pointer-events-none opacity-40'
-            : ''}">Last &raquo;</a
-        >
-      </div>
     </div>
   {/if}
 </div>

@@ -12,8 +12,11 @@ const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '..', 'database', 'jobs.sqlite');
 const db = new Database(DB_PATH);
 
+const argId = process.argv.find((a) => a.startsWith('--id='))?.split('=')[1];
+const targetJobId = Number(argId || process.env.OVERRIDE_JOB_ID || 0);
+
 const settings = db.prepare('SELECT extract_limit FROM settings WHERE id = 1').get();
-const EXTRACT_LIMIT = settings?.extract_limit || 10;
+const EXTRACT_LIMIT = Number(process.env.OVERRIDE_EXTRACT_LIMIT) || settings?.extract_limit || 10;
 
 const selectPendingJobsStmt = db.prepare(`
   SELECT id, url
@@ -21,6 +24,12 @@ const selectPendingJobsStmt = db.prepare(`
   WHERE status = 'pending'
   ORDER BY id DESC
   LIMIT ?
+`);
+
+const selectSingleJobStmt = db.prepare(`
+  SELECT id, url
+  FROM jobs
+  WHERE id = ?
 `);
 
 const updateJobSuccessStmt = db.prepare(`
@@ -62,12 +71,17 @@ function cleanText(text) {
 }
 
 async function extractPendingJobs() {
-  const pendingJobs = selectPendingJobsStmt.all(EXTRACT_LIMIT);
-  console.log(`[Playwright Extractor] Found ${pendingJobs.length} pending jobs to extract (Limit: ${EXTRACT_LIMIT}).`);
+  const pendingJobs = targetJobId
+    ? selectSingleJobStmt.all(targetJobId)
+    : selectPendingJobsStmt.all(EXTRACT_LIMIT);
 
-  if (pendingJobs.length === 0) {
-    return;
-  }
+  console.log(
+    targetJobId
+      ? `[Playwright Priority] Extracting single job ID #${targetJobId}...`
+      : `[Playwright Extractor] Found ${pendingJobs.length} pending jobs to extract (Limit: ${EXTRACT_LIMIT}).`
+  );
+
+  if (pendingJobs.length === 0) return;
 
   const browserProfilePath = path.join(__dirname, '..', 'browser_profile');
   const browser = await chromium.launchPersistentContext(browserProfilePath, {
@@ -75,7 +89,6 @@ async function extractPendingJobs() {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
   });
 
-  // SPEED OPTIMIZATION: Block images, fonts, and media across all pages
   await browser.route('**/*', (route) => {
     const type = route.request().resourceType();
     if (['image', 'media', 'font'].includes(type)) {
@@ -106,7 +119,6 @@ async function extractPendingJobs() {
           await page.waitForTimeout(60000);
         }
 
-        // Expand "Show more" on LinkedIn if folded
         await page.evaluate(() => {
           const btn = document.querySelector('.show-more-less-html__button--more, button[aria-label*="Click to see more description"]');
           if (btn) btn.click();
@@ -121,7 +133,6 @@ async function extractPendingJobs() {
 
           if (isClosed) return { closed: true, text: '' };
 
-          // Aggressively strip all non-job noise from DOM
           document.querySelectorAll(
             'header, footer, nav, aside, script, style, noscript, svg, button, ' +
             '.global-footer, .global-nav, #global-nav, [role="navigation"], ' +
@@ -151,34 +162,32 @@ async function extractPendingJobs() {
         });
 
         if (result.closed) {
-          console.log(`[Playwright Extractor] Job ID ${job.id} is closed. Skipping.`);
+          console.log(`[Playwright Extractor] Job ID ${job.id} is closed.`);
           updateJobClosedStmt.run({ id: job.id });
         } else {
           const cleanedDescription = cleanText(result.text);
-
           updateJobSuccessStmt.run({
             id: job.id,
             title: pageTitle.trim(),
             description: cleanedDescription,
           });
-
           console.log(`[Playwright Extractor] Successfully extracted job ID ${job.id}: "${pageTitle.trim()}"`);
         }
       } catch (err) {
-        console.error(`[Playwright Extractor] Failed to extract job ID ${job.id} (${job.url}):`, err.message);
+        console.error(`[Playwright Extractor] Failed to extract job ID ${job.id}:`, err.message);
         updateJobFailedStmt.run({ id: job.id });
+        if (targetJobId) throw err;
       } finally {
         await page.close().catch(() => { });
       }
 
-      if (i < pendingJobs.length - 1) {
-        const delay = getRandomDelay(1.5, 3.5);
-        await sleep(delay);
+      if (!targetJobId && i < pendingJobs.length - 1) {
+        await sleep(getRandomDelay(1.5, 3.5));
       }
     }
   } finally {
     await browser.close();
-    console.log('[Playwright Extractor] Extraction run complete. Browser closed.');
+    console.log('[Playwright Extractor] Extraction run complete.');
   }
 }
 

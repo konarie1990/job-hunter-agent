@@ -120,13 +120,16 @@ async function ingestGmailAlerts() {
   const gmail = google.gmail({ version: 'v1', auth });
 
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  const rawSenders = settingsRow?.target_senders || 'alert@indeed.com, jobalerts-noreply@linkedin.com';
-  const gmailDays = settingsRow?.gmail_days || 1;
+  const rawSenders =
+    process.env.OVERRIDE_SENDERS ||
+    settingsRow?.target_senders ||
+    'alert@indeed.com, jobalerts-noreply@linkedin.com';
+  const gmailDays = Number(process.env.OVERRIDE_GMAIL_DAYS) || settingsRow?.gmail_days || 1;
 
   const formattedSenders = rawSenders
     .split(',')
-    .map(s => s.trim().replace('.com.com', '.com'))
-    .filter(s => s.length > 0)
+    .map((s) => s.trim().replace('.com.com', '.com'))
+    .filter((s) => s.length > 0)
     .join(' OR ');
 
   const query = `from:(${formattedSenders}) newer_than:${gmailDays}d`;
